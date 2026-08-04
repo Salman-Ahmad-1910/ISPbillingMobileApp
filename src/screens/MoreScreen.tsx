@@ -2,7 +2,7 @@ import React from 'react';
 import {View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView} from 'react-native';
 import {useAuth} from '../context/AuthContext';
 import {useNavigation} from '@react-navigation/native';
-import {DrawerActions} from '@react-navigation/drawer';
+import {DrawerActions} from '@react-navigation/native';
 
 export default function MoreScreen() {
   const {user, logout} = useAuth();
@@ -22,10 +22,11 @@ export default function MoreScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
+        <View style={[styles.headerAccent, {backgroundColor: '#374151'}]} />
         <TouchableOpacity style={styles.menuButton} onPress={openDrawer}>
           <Text style={styles.menuIcon}>☰</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>More</Text>
+        <Text style={[styles.headerTitle, {color: '#374151'}]}>More</Text>
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
@@ -86,30 +87,47 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 56,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+    alignSelf: 'flex-start',
+    marginTop: 50,
+    marginLeft: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.06)',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  headerAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
   },
   menuButton: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     borderRadius: 10,
     backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14,
+    marginRight: 12,
   },
   menuIcon: {
     fontSize: 20,
     color: '#374151',
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: '700',
-    color: '#111827',
+    paddingRight: 8,
   },
   content: {
     flex: 1,

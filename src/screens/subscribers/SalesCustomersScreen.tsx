@@ -19,11 +19,13 @@ import {useFocusEffect, useNavigation, DrawerActions} from '@react-navigation/na
 import {useDrawerStatus} from '@react-navigation/drawer';
 import Svg, {Rect, Defs, LinearGradient, Stop} from 'react-native-svg';
 import {
-  Building,
-  Globe,
-  Users,
+  UserRound,
+  User,
+  ListFilter,
   Search,
   PlusCircle,
+  Pencil,
+  Trash2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -31,25 +33,23 @@ import {
   Check,
 } from 'lucide-react-native';
 import {
-  getCorporateCustomers,
-  createCorporateCustomer,
-  updateCorporateCustomer,
-  deleteCorporateCustomer,
+  getCustomers,
+  createCustomer,
+  updateCustomer,
+  deleteCustomer,
 } from '../../api/subscribers';
-import {CorporateCustomer} from '../../types';
+import {Customer} from '../../types';
 import {GradientButton} from '../../components/GradientButton';
 import {GradientView} from '../../components/GradientView';
 
-const PAGE_SIZES = [5, 10, 20, 50, 100];
+const PAGE_SIZES = [5, 10, 20, 50];
 
-const emptyForm: Partial<CorporateCustomer> = {
-  companyName: '',
-  contactPerson: '',
-  contactPhone: '',
-  negotiatedPricing: '',
-  contractStartDate: '',
-  contractEndDate: '',
-  totalConnections: 1,
+const emptyForm: Partial<Customer> = {
+  name: '',
+  cnic: '',
+  phone: '',
+  city: '',
+  status: 'active',
 };
 
 function DoorMenuIcon({open}: {open: boolean}) {
@@ -75,38 +75,40 @@ function DoorMenuIcon({open}: {open: boolean}) {
   );
 }
 
-function CorporateDivider() {
+function CustomersDivider() {
   return (
     <View style={styles.heroDivider}>
       <Svg height="2" width="100%">
         <Defs>
-          <LinearGradient id="corporateHeroGrad" x1="0" y1="0" x2="1" y2="0">
-            <Stop offset="0" stopColor="#6366F1" stopOpacity="1" />
-            <Stop offset="0.7" stopColor="#9333EA" stopOpacity="0.6" />
-            <Stop offset="1" stopColor="#9333EA" stopOpacity="0" />
+          <LinearGradient id="salesCustomersGrad" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor="#8B5CF6" stopOpacity="1" />
+            <Stop offset="0.7" stopColor="#A855F7" stopOpacity="0.6" />
+            <Stop offset="1" stopColor="#A855F7" stopOpacity="0" />
           </LinearGradient>
         </Defs>
-        <Rect x="0" y="0" width="100%" height="2" fill="url(#corporateHeroGrad)" />
+        <Rect x="0" y="0" width="100%" height="2" fill="url(#salesCustomersGrad)" />
       </Svg>
     </View>
   );
 }
 
-export default function CorporateScreen() {
+export default function SalesCustomersScreen() {
   const nav = useNavigation();
   const drawerStatus = useDrawerStatus();
-  const [customers, setCustomers] = useState<CorporateCustomer[]>([]);
-  const [filtered, setFiltered] = useState<CorporateCustomer[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [filtered, setFiltered] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [statusFilters, setStatusFilters] = useState<string[]>([]);
+  const [statusSheetOpen, setStatusSheetOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [pageInput, setPageInput] = useState('');
   const [pageSizeOpen, setPageSizeOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<CorporateCustomer | null>(null);
-  const [form, setForm] = useState<Partial<CorporateCustomer>>(emptyForm);
+  const [editing, setEditing] = useState<Customer | null>(null);
+  const [form, setForm] = useState<Partial<Customer>>(emptyForm);
   const [saving, setSaving] = useState(false);
 
   const openDrawer = () => {
@@ -120,10 +122,10 @@ export default function CorporateScreen() {
       } else {
         setLoading(true);
       }
-      const data = await getCorporateCustomers();
+      const data = await getCustomers();
       setCustomers(data);
     } catch {
-      Alert.alert('Error', 'Failed to load corporate clients');
+      Alert.alert('Error', 'Failed to load customers');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -138,46 +140,67 @@ export default function CorporateScreen() {
       const q = search.toLowerCase();
       result = result.filter(
         c =>
-          c.companyName.toLowerCase().includes(q) ||
-          c.contactPerson.toLowerCase().includes(q) ||
-          c.contactPhone.toLowerCase().includes(q) ||
-          c.id.toLowerCase().includes(q),
+          c.name.toLowerCase().includes(q) ||
+          c.cnic.toLowerCase().includes(q) ||
+          c.phone.toLowerCase().includes(q),
       );
+    }
+    if (statusFilters.length > 0) {
+      result = result.filter(c => statusFilters.includes(c.status));
     }
     setFiltered(result);
     setCurrentPage(1);
-  }, [customers, search]);
+  }, [customers, search, statusFilters]);
 
-  const totalConnections = useMemo(
-    () => customers.reduce((sum, c) => sum + (c.totalConnections || 0), 0),
+  const activeCustomers = useMemo(
+    () => customers.filter(c => c.status === 'active').length,
     [customers],
   );
 
-  const statCards: {key: string; label: string; value: number; icon: any; gradient: [string, string]}[] = [
-    {key: 'total', label: 'Total Clients', value: customers.length, icon: Building, gradient: ['#6366F1', '#9333EA']},
-    {key: 'connections', label: 'Total Connections', value: totalConnections, icon: Globe, gradient: ['#10B981', '#16A34A']},
-    {key: 'active', label: 'Active Contracts', value: customers.length, icon: Users, gradient: ['#F59E0B', '#EA580C']},
+  const totalOutstanding = useMemo(
+    () => customers.reduce((sum, c) => sum + (Number(c.outstandingBalance) || 0), 0),
+    [customers],
+  );
+
+  const statCards: {
+    key: string;
+    label: string;
+    value: string;
+    icon: any;
+    gradient: [string, string];
+    valueColor?: string;
+  }[] = [
+    {key: 'total', label: 'Total Customers', value: String(customers.length), icon: UserRound, gradient: ['#8B5CF6', '#7C3AED']},
+    {key: 'active', label: 'Active', value: String(activeCustomers), icon: UserRound, gradient: ['#10B981', '#16A34A'], valueColor: '#059669'},
+    {key: 'outstanding', label: 'Outstanding (PKR)', value: totalOutstanding.toLocaleString(), icon: UserRound, gradient: ['#F59E0B', '#EA580C'], valueColor: '#D97706'},
   ];
 
-  const handleDelete = (id: string, name: string) => {
-    Alert.alert('Delete Corporate Client', `Delete ${name}?`, [
+  const toggleStatusFilter = (status: string) => {
+    setStatusFilters(prev =>
+      prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status],
+    );
+  };
+
+  const handleDelete = (customer: Customer) => {
+    Alert.alert('Delete Customer', `Delete ${customer.name}?`, [
       {text: 'Cancel', style: 'cancel'},
       {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
           try {
-            await deleteCorporateCustomer(id);
-            setCustomers(prev => prev.filter(c => c.id !== id));
-          } catch {
-            Alert.alert('Error', 'Failed to delete corporate client');
+            await deleteCustomer(customer.id);
+            setCustomers(prev => prev.filter(c => c.id !== customer.id));
+          } catch (err: any) {
+            const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to delete customer';
+            Alert.alert('Error', msg);
           }
         },
       },
     ]);
   };
 
-  const setField = (key: keyof CorporateCustomer, value: any) => {
+  const setField = (key: keyof Customer, value: any) => {
     setForm(prev => ({...prev, [key]: value}));
   };
 
@@ -187,57 +210,53 @@ export default function CorporateScreen() {
     setFormOpen(true);
   };
 
-  const openEdit = (customer: CorporateCustomer) => {
+  const openEdit = (customer: Customer) => {
     setEditing(customer);
     setForm({...emptyForm, ...customer});
     setFormOpen(true);
   };
 
   const handleSave = async () => {
-    if (!form.companyName?.trim()) {
-      Alert.alert('Error', 'Company name is required');
+    if (!form.name?.trim()) {
+      Alert.alert('Error', 'Customer name is required');
       return;
     }
-    if (!form.contactPerson?.trim()) {
-      Alert.alert('Error', 'Contact person is required');
+    if (!form.cnic?.trim()) {
+      Alert.alert('Error', 'CNIC is required');
       return;
     }
-    if (!form.contactPhone?.trim()) {
-      Alert.alert('Error', 'Contact phone is required');
+    if (!form.phone?.trim()) {
+      Alert.alert('Error', 'Phone is required');
       return;
     }
-    if (!form.contractStartDate?.trim()) {
-      Alert.alert('Error', 'Contract start date is required');
-      return;
-    }
-    if (!form.contractEndDate?.trim()) {
-      Alert.alert('Error', 'Contract end date is required');
-      return;
-    }
-    const connections = parseInt(String(form.totalConnections), 10) || 0;
-    if (connections < 1) {
-      Alert.alert('Error', 'Total connections must be at least 1');
+    if (!form.city?.trim()) {
+      Alert.alert('Error', 'City is required');
       return;
     }
     setSaving(true);
     try {
-      const payload: Partial<CorporateCustomer> = {
+      const payload: Partial<Customer> = {
         ...form,
-        companyName: form.companyName.trim(),
-        contactPerson: form.contactPerson.trim(),
-        contactPhone: form.contactPhone.trim(),
-        totalConnections: connections,
+        name: form.name.trim(),
+        cnic: form.cnic.trim(),
+        phone: form.phone.trim(),
+        city: form.city.trim(),
+        status: form.status || 'active',
       };
       if (editing) {
-        await updateCorporateCustomer(editing.id, payload);
+        await updateCustomer(editing.id, payload);
       } else {
-        await createCorporateCustomer(payload);
+        await createCustomer({
+          ...payload,
+          totalInvoices: 0,
+          outstandingBalance: 0,
+        });
       }
       setFormOpen(false);
       setEditing(null);
       fetchData(false);
     } catch (err: any) {
-      const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to save corporate client';
+      const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to save customer';
       Alert.alert('Error', msg);
     } finally {
       setSaving(false);
@@ -265,63 +284,62 @@ export default function CorporateScreen() {
     }
   };
 
-  const renderItem = ({item}: {item: CorporateCustomer}) => {
+  const renderItem = ({item}: {item: Customer}) => {
+    const isActive = item.status === 'active';
+    const isBlacklisted = item.status === 'blacklisted';
+    const statusBadgeBg = isActive ? '#D1FAE5' : isBlacklisted ? '#FEE2E2' : '#F3F4F6';
+    const statusBadgeText = isActive ? '#047857' : isBlacklisted ? '#B91C1C' : '#6B7280';
     return (
-      <TouchableOpacity style={styles.card} onPress={() => openEdit(item)}>
+      <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <Text style={styles.rowIndex}>{item.id}</Text>
+          <View style={styles.avatar}>
+            <User size={14} color="#7C3AED" />
+          </View>
           <View style={styles.cardInfo}>
-            <Text style={styles.cardName} numberOfLines={1}>{item.companyName}</Text>
+            <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+            <Text style={styles.cardCnic} numberOfLines={1}>{item.cnic}</Text>
           </View>
-          <View style={styles.connectionsBadge}>
-            <Text style={styles.connectionsBadgeText}>{item.totalConnections} conn</Text>
+          <View style={[styles.statusBadge, {backgroundColor: statusBadgeBg}]}>
+            <Text style={[styles.statusBadgeText, {color: statusBadgeText}]}>
+              {item.status}
+            </Text>
           </View>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Contact Person</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{item.contactPerson || 'N/A'}</Text>
         </View>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Phone</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{item.contactPhone || 'N/A'}</Text>
+          <Text style={styles.infoValue} numberOfLines={1}>{item.phone}</Text>
         </View>
         <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Connections</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{item.totalConnections}</Text>
+          <Text style={styles.infoLabel}>City</Text>
+          <Text style={styles.infoValue} numberOfLines={1}>{item.city}</Text>
         </View>
         <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Contract Start</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{item.contractStartDate || 'N/A'}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Contract End</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{item.contractEndDate || 'N/A'}</Text>
+          <Text style={styles.infoLabel}>Outstanding</Text>
+          <Text style={styles.infoValue} numberOfLines={1}>
+            PKR {(Number(item.outstandingBalance) || 0).toLocaleString()}
+          </Text>
         </View>
         <View style={styles.cardFooter}>
-          <View style={styles.cardActions}>
-            <TouchableOpacity style={styles.editBtn} onPress={() => openEdit(item)}>
-              <Text style={styles.editBtnText}>Edit</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.deleteBtn}
-              onPress={() => handleDelete(item.id, item.companyName)}>
-              <Text style={styles.deleteBtnText}>Delete</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.iconBtnBlue} onPress={() => openEdit(item)}>
+            <Pencil size={15} color="#2563EB" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtnRose} onPress={() => handleDelete(item)}>
+            <Trash2 size={15} color="#E11D48" />
+          </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#6366F1" />
+        <ActivityIndicator size="large" color="#8B5CF6" />
       </View>
     );
   }
 
-  const formRow = (label: string, value: any, onChangeText: (t: string) => void, placeholder = '', keyboardType?: 'default' | 'phone-pad' | 'numeric') => (
+  const formRow = (label: string, value: any, onChangeText: (t: string) => void, placeholder = '', keyboardType?: 'default' | 'numeric' | 'phone-pad') => (
     <View style={styles.formGroup}>
       <Text style={styles.formLabel}>{label}</Text>
       <TextInput
@@ -335,17 +353,27 @@ export default function CorporateScreen() {
     </View>
   );
 
-  const formArea = (label: string, value: any, onChangeText: (t: string) => void, placeholder = '') => (
+  const chipRow = (
+    label: string,
+    options: {label: string; value: string}[],
+    selected: string,
+    onSelect: (v: string) => void,
+  ) => (
     <View style={styles.formGroup}>
       <Text style={styles.formLabel}>{label}</Text>
-      <TextInput
-        style={[styles.formInput, styles.formTextarea]}
-        value={String(value ?? '')}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor="#9CA3AF"
-        multiline
-      />
+      <View style={styles.chipRow}>
+        {options.map(o => {
+          const active = o.value === selected;
+          return (
+            <TouchableOpacity
+              key={o.value}
+              style={[styles.chip, active && styles.chipActive]}
+              onPress={() => onSelect(o.value)}>
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
     </View>
   );
 
@@ -356,7 +384,7 @@ export default function CorporateScreen() {
           <DoorMenuIcon open={drawerStatus === 'open'} />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle}>Corporate Clients</Text>
+          <Text style={styles.headerTitle}>Customers</Text>
           <Text style={styles.headerCount}>{filtered.length} total</Text>
         </View>
       </GradientView>
@@ -367,22 +395,22 @@ export default function CorporateScreen() {
         renderItem={renderItem}
         contentContainerStyle={styles.list}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} colors={['#6366F1']} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} colors={['#8B5CF6']} />
         }
         ListHeaderComponent={
           <View>
             {/* Hero Header */}
             <View style={styles.heroHeader}>
-              <GradientView colors={['#6366F1', '#9333EA']} style={styles.heroIconBox}>
-                <Building size={20} color="#FFFFFF" />
+              <GradientView colors={['#8B5CF6', '#7C3AED']} style={styles.heroIconBox}>
+                <UserRound size={20} color="#FFFFFF" />
               </GradientView>
               <View style={styles.heroInfo}>
-                <Text style={styles.heroTitle}>Corporate Clients</Text>
-                <Text style={styles.heroSubtitle}>Manage bulk connections and corporate accounts.</Text>
+                <Text style={styles.heroTitle}>Customers</Text>
+                <Text style={styles.heroSubtitle}>Manage customers who are not subscribers or dealers.</Text>
               </View>
             </View>
 
-            <CorporateDivider />
+            <CustomersDivider />
 
             {/* Stat cards */}
             <ScrollView
@@ -396,44 +424,58 @@ export default function CorporateScreen() {
                   </GradientView>
                   <View>
                     <Text style={styles.statLabel}>{card.label}</Text>
-                    <Text style={styles.statValue}>{card.value}</Text>
+                    <Text style={[styles.statValue, card.valueColor ? {color: card.valueColor} : null]}>
+                      {card.value}
+                    </Text>
                   </View>
                 </View>
               ))}
             </ScrollView>
 
-            {/* Search + Add */}
+            {/* Search + Status filter */}
             <View style={styles.toolbar}>
               <View style={styles.searchBox}>
                 <Search size={16} color="#6B7280" />
                 <TextInput
                   style={styles.searchInput}
-                  placeholder="Filter by company or contact name..."
+                  placeholder="Search by name, CNIC, or phone..."
                   placeholderTextColor="#9CA3AF"
                   value={search}
                   onChangeText={setSearch}
                 />
               </View>
-              <View style={styles.toolbarActions}>
-                <GradientButton
-                  colors={['#10B981', '#16A34A']}
-                  style={styles.addBtn}
-                  onPress={openAdd}>
-                  <PlusCircle size={16} color="#FFFFFF" />
-                  <Text style={styles.addBtnText} numberOfLines={1}>
-                    Add Corporate Client
-                  </Text>
-                </GradientButton>
-              </View>
+              <TouchableOpacity style={styles.filterBtn} onPress={() => setStatusSheetOpen(true)}>
+                <ListFilter size={15} color="#7C3AED" />
+                <Text style={styles.filterBtnText}>Status</Text>
+                {statusFilters.length > 0 ? (
+                  <View style={styles.filterCount}>
+                    <Text style={styles.filterCountText}>{statusFilters.length}</Text>
+                  </View>
+                ) : null}
+              </TouchableOpacity>
+            </View>
+
+            {/* Add button */}
+            <View style={styles.actionsRow}>
+              <View style={styles.addSpacer} />
+              <GradientButton
+                colors={['#10B981', '#16A34A']}
+                style={styles.addBtn}
+                onPress={openAdd}>
+                <PlusCircle size={16} color="#FFFFFF" />
+                <Text style={styles.addBtnText} numberOfLines={1}>
+                  Add Customer
+                </Text>
+              </GradientButton>
             </View>
           </View>
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>🏢</Text>
-            <Text style={styles.emptyTitle}>No corporate clients found</Text>
+            <Text style={styles.emptyIcon}>👤</Text>
+            <Text style={styles.emptyTitle}>No customers found</Text>
             <Text style={styles.emptyText}>
-              {search ? 'Try adjusting your search' : 'Add your first corporate client'}
+              {search || statusFilters.length > 0 ? 'Try adjusting your search' : 'Add your first customer'}
             </Text>
           </View>
         }
@@ -441,7 +483,7 @@ export default function CorporateScreen() {
           <View style={styles.pagination}>
             <Text style={styles.paginationInfo}>
               Showing {filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} to{' '}
-              {Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} corporate clients
+              {Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} customers
             </Text>
 
             <View style={styles.pageControls}>
@@ -460,7 +502,7 @@ export default function CorporateScreen() {
                   key={page}
                   style={[
                     styles.pageNum,
-                    currentPage === page && {backgroundColor: '#6366F1'},
+                    currentPage === page && {backgroundColor: '#8B5CF6'},
                   ]}
                   onPress={() => setCurrentPage(page)}>
                   <Text
@@ -568,7 +610,7 @@ export default function CorporateScreen() {
                   <Text style={[styles.sheetOptionText, active && styles.sheetOptionTextActive]}>
                     {size} per page
                   </Text>
-                  {active ? <Check size={16} color="#6366F1" /> : null}
+                  {active ? <Check size={16} color="#8B5CF6" /> : null}
                 </TouchableOpacity>
               );
             })}
@@ -576,7 +618,52 @@ export default function CorporateScreen() {
         </View>
       </Modal>
 
-      {/* Add/Edit Corporate Client form */}
+      {/* Status filter sheet (multi-select) */}
+      <Modal
+        visible={statusSheetOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setStatusSheetOpen(false)}>
+        <View style={styles.sheetOverlay}>
+          <View style={styles.sheet}>
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Filter by status</Text>
+              <TouchableOpacity onPress={() => setStatusSheetOpen(false)}>
+                <Text style={styles.sheetClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            {['active', 'inactive', 'blacklisted'].map(status => {
+              const active = statusFilters.includes(status);
+              return (
+                <TouchableOpacity
+                  key={status}
+                  style={styles.sheetOption}
+                  onPress={() => toggleStatusFilter(status)}>
+                  <Text
+                    style={[
+                      styles.sheetOptionText,
+                      {textTransform: 'capitalize'},
+                      active && styles.sheetOptionTextActive,
+                    ]}>
+                    {status}
+                  </Text>
+                  {active ? <Check size={16} color="#8B5CF6" /> : null}
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity
+              style={styles.clearBtn}
+              onPress={() => {
+                setStatusFilters([]);
+                setStatusSheetOpen(false);
+              }}>
+              <Text style={styles.clearBtnText}>Clear filters</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Add/Edit Customer form */}
       <Modal
         visible={formOpen}
         transparent
@@ -588,74 +675,31 @@ export default function CorporateScreen() {
           <View style={styles.formSheet}>
             <View style={styles.formSheetHeader}>
               <View style={styles.formSheetTitleRow}>
-                <GradientView colors={['#6366F1', '#9333EA']} style={styles.formSheetIcon}>
-                  <Building size={16} color="#FFFFFF" />
+                <GradientView colors={['#8B5CF6', '#7C3AED']} style={styles.formSheetIcon}>
+                  <UserRound size={16} color="#FFFFFF" />
                 </GradientView>
-                <Text style={styles.formSheetTitle}>{editing ? 'Edit' : 'Add'} Corporate Client</Text>
+                <Text style={styles.formSheetTitle}>
+                  {editing ? 'Edit Customer' : 'Add New Customer'}
+                </Text>
               </View>
               <TouchableOpacity onPress={() => setFormOpen(false)}>
                 <Text style={styles.sheetClose}>✕</Text>
               </TouchableOpacity>
             </View>
             <ScrollView contentContainerStyle={styles.formBody} keyboardShouldPersistTaps="handled">
-              {formRow('Company Name *', form.companyName, t => setField('companyName', t), 'e.g. Acme Corp')}
+              {formRow('Customer Name *', form.name, t => setField('name', t), 'e.g., Ahmed Khan')}
               <View style={styles.formRow2}>
-                <View style={styles.formGroupHalf}>
-                  <Text style={styles.formLabel}>Contact Person *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={String(form.contactPerson ?? '')}
-                    onChangeText={t => setField('contactPerson', t)}
-                    placeholder="e.g. John Doe"
-                    placeholderTextColor="#9CA3AF"
-                  />
-                </View>
-                <View style={styles.formGroupHalf}>
-                  <Text style={styles.formLabel}>Contact Phone *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={String(form.contactPhone ?? '')}
-                    onChangeText={t => setField('contactPhone', t)}
-                    placeholder="e.g. 0300-1234567"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="phone-pad"
-                  />
-                </View>
+                {formRow('CNIC *', form.cnic, t => setField('cnic', t), 'e.g., 42201-1234567-8')}
+                {formRow('Phone *', form.phone, t => setField('phone', t), 'e.g., 0300-1234567', 'phone-pad')}
               </View>
               <View style={styles.formRow2}>
-                <View style={styles.formGroupHalf}>
-                  <Text style={styles.formLabel}>Contract Start Date *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={String(form.contractStartDate ?? '')}
-                    onChangeText={t => setField('contractStartDate', t)}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor="#9CA3AF"
-                  />
-                </View>
-                <View style={styles.formGroupHalf}>
-                  <Text style={styles.formLabel}>Contract End Date *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={String(form.contractEndDate ?? '')}
-                    onChangeText={t => setField('contractEndDate', t)}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor="#9CA3AF"
-                  />
-                </View>
+                {formRow('City *', form.city, t => setField('city', t), 'e.g., Karachi')}
               </View>
-              <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Total Connections *</Text>
-                <TextInput
-                  style={styles.formInput}
-                  value={String(form.totalConnections ?? '')}
-                  onChangeText={t => setField('totalConnections', parseInt(t, 10) || 0)}
-                  placeholder="1"
-                  placeholderTextColor="#9CA3AF"
-                  keyboardType="numeric"
-                />
-              </View>
-              {formArea('Pricing Details (Optional)', form.negotiatedPricing, t => setField('negotiatedPricing', t), 'e.g. Flat 10% discount on all services')}
+              {chipRow('Status', [
+                {label: 'Active', value: 'active'},
+                {label: 'Inactive', value: 'inactive'},
+                {label: 'Blacklisted', value: 'blacklisted'},
+              ], form.status || 'active', v => setField('status', v))}
               <View style={styles.formActions}>
                 <TouchableOpacity
                   style={styles.cancelBtn}
@@ -671,7 +715,7 @@ export default function CorporateScreen() {
                   {saving ? (
                     <ActivityIndicator color="#FFFFFF" size="small" />
                   ) : (
-                    <Text style={styles.saveBtnText}>{editing ? 'Update' : 'Save Client'}</Text>
+                    <Text style={styles.saveBtnText}>{editing ? 'Update' : 'Save Customer'}</Text>
                   )}
                 </GradientButton>
               </View>
@@ -755,7 +799,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginRight: 10,
-    minWidth: 160,
+    minWidth: 170,
   },
   statIcon: {
     width: 38,
@@ -771,8 +815,15 @@ const styles = StyleSheet.create({
   },
   statLabel: {fontSize: 11, color: '#6B7280', fontWeight: '500'},
   statValue: {fontSize: 20, fontWeight: '700', color: '#111827'},
-  toolbar: {paddingHorizontal: 16, paddingTop: 14, rowGap: 8, columnGap: 8},
+  toolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    gap: 8,
+  },
   searchBox: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
@@ -782,19 +833,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   searchInput: {flex: 1, paddingVertical: 10, fontSize: 14, color: '#111827', marginLeft: 8},
-  toolbarActions: {
+  filterBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
-    rowGap: 8,
-    columnGap: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#C4B5FD',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    flexShrink: 0,
   },
+  filterBtnText: {color: '#7C3AED', fontSize: 12, fontWeight: '600', marginLeft: 5},
+  filterCount: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#7C3AED',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
+    paddingHorizontal: 4,
+  },
+  filterCountText: {fontSize: 11, fontWeight: '700', color: '#FFFFFF'},
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 10,
+  },
+  addSpacer: {flex: 1},
   addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 10,
     flexShrink: 0,
     shadowOffset: {width: 0, height: 3},
@@ -809,40 +882,58 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#E5E7EB',
   },
   cardHeader: {flexDirection: 'row', alignItems: 'center', marginBottom: 8},
-  rowIndex: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#6366F1',
+  avatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#EDE9FE',
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 10,
-    flexShrink: 1,
   },
   cardInfo: {flex: 1},
   cardName: {fontSize: 15, fontWeight: '600', color: '#111827'},
-  connectionsBadge: {
-    paddingHorizontal: 8,
+  cardCnic: {
+    fontSize: 11,
+    color: '#6B7280',
+    marginTop: 2,
+    fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}),
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: 8,
-    backgroundColor: '#EEF2FF',
   },
-  connectionsBadgeText: {fontSize: 11, fontWeight: '600', color: '#6366F1'},
+  statusBadgeText: {fontSize: 11, fontWeight: '600', textTransform: 'capitalize'},
   infoRow: {flexDirection: 'row', paddingVertical: 5},
   infoLabel: {fontSize: 12, color: '#9CA3AF', width: 110},
   infoValue: {flex: 1, fontSize: 13, color: '#374151', fontWeight: '500'},
   cardFooter: {
-    flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center',
-    borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 10, marginTop: 6,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingTop: 10,
+    marginTop: 6,
   },
-  cardActions: {flexDirection: 'row', gap: 8},
-  editBtn: {
-    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 6,
-    backgroundColor: '#EEF2FF',
+  iconBtnBlue: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#DBEAFE',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  editBtnText: {fontSize: 12, fontWeight: '500', color: '#6366F1'},
-  deleteBtn: {
-    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 6,
-    backgroundColor: '#FEF2F2',
+  iconBtnRose: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FFE4E6',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  deleteBtnText: {fontSize: 12, fontWeight: '500', color: '#EF4444'},
   empty: {alignItems: 'center', paddingVertical: 40},
   emptyIcon: {fontSize: 48, marginBottom: 12},
   emptyTitle: {fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 4},
@@ -947,7 +1038,17 @@ const styles = StyleSheet.create({
     borderBottomColor: '#F3F4F6',
   },
   sheetOptionText: {fontSize: 15, color: '#374151', fontWeight: '500', flex: 1, marginRight: 8},
-  sheetOptionTextActive: {color: '#6366F1', fontWeight: '600'},
+  sheetOptionTextActive: {color: '#8B5CF6', fontWeight: '600'},
+  clearBtn: {
+    marginHorizontal: 20,
+    marginTop: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#C4B5FD',
+    alignItems: 'center',
+  },
+  clearBtnText: {fontSize: 14, color: '#7C3AED', fontWeight: '600'},
   formOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -981,13 +1082,19 @@ const styles = StyleSheet.create({
   formBody: {paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40},
   formGroup: {marginBottom: 14},
   formRow2: {flexDirection: 'row', gap: 12, alignItems: 'flex-start'},
-  formGroupHalf: {flex: 1, marginBottom: 14},
   formLabel: {fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 6},
   formInput: {
     backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB',
     paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, color: '#111827',
   },
-  formTextarea: {minHeight: 80, textAlignVertical: 'top'},
+  chipRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 8},
+  chip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
+    backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#D1D5DB',
+  },
+  chipActive: {backgroundColor: '#8B5CF6', borderColor: '#8B5CF6'},
+  chipText: {fontSize: 13, color: '#6B7280', fontWeight: '500'},
+  chipTextActive: {color: '#FFFFFF'},
   formActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',

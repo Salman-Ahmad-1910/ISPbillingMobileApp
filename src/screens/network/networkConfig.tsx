@@ -106,7 +106,7 @@ export const networkModules: Record<string, ModuleConfig> = {
       {
         label: 'Zones',
         icon: Layers,
-        colors: ['#166534', '#22c55e'],
+        colors: ['#B45309', '#FB923C'],
         value: (items: Area[]) => new Set(items.map(a => a.zone)).size,
       },
     ],

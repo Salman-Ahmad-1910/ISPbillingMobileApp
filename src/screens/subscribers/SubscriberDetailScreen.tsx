@@ -1,29 +1,14 @@
-import React, {useEffect, useState} from 'react';
+import React from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
 } from 'react-native';
-import {getSubscriber, deleteSubscriber} from '../../api/subscribers';
-import {Subscriber} from '../../types';
+import {deleteConnection} from '../../api/connections';
+import {Connection} from '../../types';
+import AnimatedBackArrow from '../../components/AnimatedBackArrow';
 
 export default function SubscriberDetailScreen({route, navigation}: any) {
-  const {id} = route.params;
-  const [subscriber, setSubscriber] = useState<Subscriber | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const data = await getSubscriber(id);
-        setSubscriber(data);
-      } catch {
-        Alert.alert('Error', 'Failed to load subscriber');
-        navigation.goBack();
-      } finally {
-        setLoading(false);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  const connection: Connection = route.params?.connection;
+  const subscriber: Connection | null = connection || null;
 
   const handleDelete = () => {
     if (!subscriber) {return;}
@@ -33,7 +18,7 @@ export default function SubscriberDetailScreen({route, navigation}: any) {
         text: 'Delete', style: 'destructive',
         onPress: async () => {
           try {
-            await deleteSubscriber(subscriber.id);
+            await deleteConnection(subscriber.id);
             navigation.goBack();
           } catch {
             Alert.alert('Error', 'Failed to delete');
@@ -43,10 +28,10 @@ export default function SubscriberDetailScreen({route, navigation}: any) {
     ]);
   };
 
-  if (loading || !subscriber) {
+  if (!subscriber) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#4F46E5" />
+        <Text style={styles.emptyText}>Subscriber not found</Text>
       </View>
     );
   }
@@ -54,17 +39,20 @@ export default function SubscriberDetailScreen({route, navigation}: any) {
   const statusColors: Record<string, string> = {
     active: '#10B981', suspended: '#F59E0B', inactive: '#6B7280', deactivated: '#EF4444',
   };
+  const typeLabels: Record<string, string> = {
+    both: 'Both', internet: 'Internet', tv_cable: 'TV Cable',
+  };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
+        <View style={[styles.headerAccent, {backgroundColor: '#4F46E5'}]} />
+        <AnimatedBackArrow onPress={() => navigation.goBack()} color="#4F46E5" />
+        <Text style={styles.headerTitle}>Subscriber</Text>
         <View style={styles.headerActions}>
           <TouchableOpacity
             style={styles.editBtn}
-            onPress={() => navigation.navigate('SubscriberForm', {subscriber})}>
+            onPress={() => navigation.navigate('SubscriberForm', {connection: subscriber})}>
             <Text style={styles.editBtnText}>Edit</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
@@ -79,7 +67,7 @@ export default function SubscriberDetailScreen({route, navigation}: any) {
             <Text style={styles.avatarText}>{subscriber.name.charAt(0).toUpperCase()}</Text>
           </View>
           <Text style={styles.name}>{subscriber.name}</Text>
-          <Text style={styles.identity}>{subscriber.subscriber_identity}</Text>
+          <Text style={styles.identity}>{subscriber.internetId}</Text>
           <View style={[styles.statusBadge, {backgroundColor: (statusColors[subscriber.status] || '#6B7280') + '20'}]}>
             <Text style={[styles.statusText, {color: statusColors[subscriber.status] || '#6B7280'}]}>
               {subscriber.status}
@@ -90,50 +78,64 @@ export default function SubscriberDetailScreen({route, navigation}: any) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Contact Information</Text>
           <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Phone</Text>
-            <Text style={styles.fieldValue}>{subscriber.phone}</Text>
+            <Text style={styles.fieldLabel}>Cell</Text>
+            <Text style={styles.fieldValue}>{subscriber.cell || '-'}</Text>
+          </View>
+          <View style={styles.fieldRow}>
+            <Text style={styles.fieldLabel}>Mobile</Text>
+            <Text style={styles.fieldValue}>{subscriber.mobile || '-'}</Text>
           </View>
           <View style={styles.fieldRow}>
             <Text style={styles.fieldLabel}>CNIC</Text>
-            <Text style={styles.fieldValue}>{subscriber.cnic}</Text>
+            <Text style={styles.fieldValue}>{subscriber.cnic || '-'}</Text>
           </View>
           <View style={styles.fieldRow}>
             <Text style={styles.fieldLabel}>Address</Text>
-            <Text style={styles.fieldValue}>{subscriber.installationAddress}</Text>
+            <Text style={styles.fieldValue}>{subscriber.address || '-'}</Text>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Billing</Text>
+          <Text style={styles.sectionTitle}>Subscription</Text>
           <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Package</Text>
-            <Text style={styles.fieldValue}>{subscriber.packageName || '-'}</Text>
+            <Text style={styles.fieldLabel}>Type</Text>
+            <Text style={styles.fieldValue}>{typeLabels[subscriber.connectionType] || subscriber.connectionType || '-'}</Text>
           </View>
           <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Billing Cycle</Text>
-            <Text style={styles.fieldValue}>{subscriber.billingCycle}</Text>
+            <Text style={styles.fieldLabel}>Install Date</Text>
+            <Text style={styles.fieldValue}>{subscriber.installationDate || '-'}</Text>
           </View>
           <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Balance</Text>
-            <Text style={[styles.fieldValue, subscriber.balance > 0 && styles.warning]}>
-              {subscriber.balance.toFixed(2)}
-            </Text>
+            <Text style={styles.fieldLabel}>Recharge Date</Text>
+            <Text style={styles.fieldValue}>{subscriber.rechargeDate || '-'}</Text>
+          </View>
+          <View style={styles.fieldRow}>
+            <Text style={styles.fieldLabel}>Cable Package</Text>
+            <Text style={styles.fieldValue}>{subscriber.packageCable || '-'}</Text>
+          </View>
+          <View style={styles.fieldRow}>
+            <Text style={styles.fieldLabel}>Internet Package</Text>
+            <Text style={styles.fieldValue}>{subscriber.packageInternet || '-'}</Text>
+          </View>
+          <View style={styles.fieldRow}>
+            <Text style={styles.fieldLabel}>Connection Provider</Text>
+            <Text style={styles.fieldValue}>{subscriber.connectionProvider || '-'}</Text>
           </View>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Network</Text>
           <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Area</Text>
-            <Text style={styles.fieldValue}>{subscriber.areaName || '-'}</Text>
+            <Text style={styles.fieldLabel}>Box Number</Text>
+            <Text style={styles.fieldValue}>{subscriber.boxNumber || '-'}</Text>
           </View>
           <View style={styles.fieldRow}>
             <Text style={styles.fieldLabel}>Splitter Port</Text>
             <Text style={styles.fieldValue}>{subscriber.splitterPort || '-'}</Text>
           </View>
           <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Connection Date</Text>
-            <Text style={styles.fieldValue}>{subscriber.connectionDate || '-'}</Text>
+            <Text style={styles.fieldLabel}>Amount</Text>
+            <Text style={styles.fieldValue}>{subscriber.amount ? subscriber.amount.toFixed(2) : '-'}</Text>
           </View>
         </View>
       </ScrollView>
@@ -144,13 +146,20 @@ export default function SubscriberDetailScreen({route, navigation}: any) {
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: '#F3F4F6'},
   centered: {flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F3F4F6'},
+  emptyText: {fontSize: 14, color: '#6B7280'},
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingTop: 56, paddingHorizontal: 20, paddingBottom: 12,
-    backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E7EB',
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
+    marginTop: 50, marginLeft: 16, paddingVertical: 8, paddingHorizontal: 8,
+    backgroundColor: '#FFFFFF', borderRadius: 16,
+    borderWidth: 1, borderColor: 'rgba(0, 0, 0, 0.06)',
+    shadowColor: '#000', shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.12, shadowRadius: 10, elevation: 5,
   },
-  backBtn: {paddingVertical: 4},
-  backText: {fontSize: 16, color: '#4F46E5', fontWeight: '500'},
+  headerAccent: {
+    position: 'absolute', left: 0, top: 0, bottom: 0, width: 4,
+    borderTopLeftRadius: 16, borderBottomLeftRadius: 16,
+  },
+  headerTitle: {fontSize: 17, fontWeight: '700', color: '#111827', marginRight: 12},
   headerActions: {flexDirection: 'row', gap: 8},
   editBtn: {paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8, backgroundColor: '#EEF2FF'},
   editBtnText: {fontSize: 13, fontWeight: '600', color: '#4F46E5'},
@@ -183,5 +192,4 @@ const styles = StyleSheet.create({
   },
   fieldLabel: {fontSize: 13, color: '#6B7280'},
   fieldValue: {fontSize: 13, color: '#111827', fontWeight: '500', flex: 1, textAlign: 'right'},
-  warning: {color: '#F59E0B'},
 });

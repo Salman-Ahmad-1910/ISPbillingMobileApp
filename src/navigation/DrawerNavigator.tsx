@@ -14,6 +14,14 @@ import DashboardScreen from '../screens/DashboardScreen';
 import SubscribersNavigator from './SubscribersNavigator';
 import BillingScreen from '../screens/BillingScreen';
 import MoreScreen from '../screens/MoreScreen';
+import InquiriesScreen from '../screens/subscribers/InquiriesScreen';
+import CorporateScreen from '../screens/subscribers/CorporateScreen';
+import CustomersScreen from '../screens/subscribers/CustomersScreen';
+import GuarantorsScreen from '../screens/subscribers/GuarantorsScreen';
+import PackagesScreen from '../screens/subscribers/PackagesScreen';
+import ProductsScreen from '../screens/subscribers/ProductsScreen';
+import InstallmentPlansScreen from '../screens/subscribers/InstallmentPlansScreen';
+import SalesCustomersScreen from '../screens/subscribers/SalesCustomersScreen';
 import {
   AreasNavigator,
   PopsNavigator,
@@ -21,7 +29,57 @@ import {
   SplittersNavigator,
   BoxesNavigator,
 } from './NetworkNavigator';
-import {LayoutDashboard, Network, TowerControl, GitFork, Box, Archive} from 'lucide-react-native';
+import {
+  LayoutDashboard,
+  Network,
+  TowerControl,
+  GitFork,
+  Box,
+  Archive,
+  Inbox,
+  MailQuestionMark,
+  FilePen,
+  Send,
+  Clock,
+  MessageCircle,
+  Users,
+  UserPlus,
+  Building,
+  UserRound,
+  UserCheck,
+  Receipt,
+  ShoppingCart,
+  FileCog,
+  Handshake,
+  ClipboardPen,
+  TriangleAlert,
+  FolderClosed,
+  Wallet,
+  FileText,
+  Tag,
+  Building2,
+  Ruler,
+  ArrowLeftRight,
+  Activity,
+  Shapes,
+  Warehouse,
+  Layers,
+  ChartBarBig,
+  BookOpen,
+  BellRing,
+  Headphones,
+  Map,
+  Briefcase,
+  CalendarDays,
+  HandHelping,
+  ShieldCheck,
+  Settings,
+  FileClock,
+  HandCoins,
+  UserSearch,
+  LifeBuoy,
+  LogOut,
+} from 'lucide-react-native';
 
 const Drawer = createDrawerNavigator();
 
@@ -50,133 +108,132 @@ const navItems: {title: string; items: NavItem[]}[] = [
   {
     title: 'Messages',
     items: [
-      {label: 'New Messages', icon: '✉️'},
-      {label: 'Other Messages', icon: '📨'},
-      {label: 'Draft Messages', icon: '📝'},
-      {label: 'Sent Messages', icon: '📤'},
-      {label: 'Expired Messages', icon: '⏰'},
-      {label: 'WhatsApp Drafts', icon: '💬'},
+      {label: 'New Messages', icon: Inbox},
+      {label: 'Other Messages', icon: MailQuestionMark},
+      {label: 'Draft Messages', icon: FilePen},
+      {label: 'Sent Messages', icon: Send},
+      {label: 'Expiry Messages', icon: Clock},
+      {label: 'WhatsApp Drafts', icon: MessageCircle},
     ],
   },
   {
     title: 'Subscribers Management',
     items: [
-      {label: 'Subscriber Detail', icon: '👤', screen: 'Subscribers'},
-      {label: 'New Inquiries', icon: '❓', screen: 'Inquiries'},
-      {label: 'Corporate Clients', icon: '🏢', screen: 'Corporate'},
-      {label: 'Customers', icon: '👥'},
-      {label: 'Guarantors', icon: '🛡️'},
-      {label: 'Packages', icon: '📋'},
+      {label: 'Subscriber Detail', icon: Users, screen: 'Subscribers'},
+      {label: 'New Inquiries', icon: UserPlus, screen: 'Inquiries'},
+      {label: 'Corporate Clients', icon: Building, screen: 'Corporate'},
+      {label: 'Customers', icon: UserRound, screen: 'Customers'},
+      {label: 'Guarantors', icon: UserCheck, screen: 'Guarantors'},
+      {label: 'Packages', icon: Receipt, screen: 'Packages'},
     ],
   },
   {
     title: 'Sales',
     items: [
-      {label: 'Sales', icon: '💰'},
-      {label: 'Customers', icon: '👥'},
-      {label: 'Installment Plans', icon: '📅'},
-      {label: 'Point of Sale', icon: '🏪'},
+      {label: 'Sales', icon: ShoppingCart},
+      {label: 'Customers', icon: UserRound, screen: 'SalesCustomers'},
+      {label: 'Installment Plans', icon: FileCog, screen: 'InstallmentPlans'},
+      {label: 'Point of Sale', icon: ShoppingCart},
     ],
   },
   {
     title: 'Transaction',
     items: [
-      {label: 'Subscriber Collections', icon: '💵'},
-      {label: 'Dealers Collections', icon: '🤝'},
-      {label: 'Allocated Collections', icon: '📌'},
-      {label: 'Transaction Type', icon: '🔄'},
-      {label: 'Bad Debt Collections', icon: '❌'},
-      {label: 'Bill Creator', icon: '🧾'},
+      {label: 'Subscriber Collections', icon: Users},
+      {label: 'Dealers Collections', icon: Handshake},
+      {label: 'Allocated Collections', icon: ClipboardPen},
+      {label: 'Transaction Type', icon: FileCog},
+      {label: 'Bad Debt Collections', icon: TriangleAlert},
+      {label: 'Bill Creator', icon: ClipboardPen},
     ],
   },
   {
     title: 'Dealer Management',
     items: [
-      {label: 'My Dealers', icon: '🤝'},
-      {label: 'Dealer Dashboard', icon: '📊'},
-      {label: 'Collections', icon: '💵'},
-      {label: 'Defaulters', icon: '⚠️'},
-      {label: 'New Dealers', icon: '🆕'},
-      {label: 'Invoices', icon: '🧾'},
+      {label: 'My Dealers', icon: Users},
+      {label: 'Dealer Dashboard', icon: FolderClosed},
+      {label: 'Collections', icon: Wallet},
+      {label: 'Defaulters', icon: TriangleAlert},
+      {label: 'New Dealers', icon: UserPlus},
+      {label: 'Invoices', icon: FileText},
     ],
   },
   {
     title: 'Inventory',
     items: [
-      {label: 'Products', icon: '📦'},
-      {label: 'Plans', icon: '📋'},
-      {label: 'Stock', icon: '🏭'},
-      {label: 'Brands', icon: '🏷️'},
-      {label: 'Unit Type', icon: '📏'},
-      {label: 'Product Type', icon: '📑'},
-      {label: 'Inventory Status', icon: '✅'},
-      {label: 'Purchase', icon: '🛒'},
-      {label: 'Vendors', icon: '🏪'},
-      {label: 'Store', icon: '🏬'},
+      {label: 'Products', icon: Box, screen: 'Products'},
+      {label: 'Stock', icon: Warehouse},
+      {label: 'Brands', icon: Tag},
+      {label: 'Unit Type', icon: Ruler},
+      {label: 'Product Type', icon: Shapes},
+      {label: 'Inventory Status', icon: Activity},
+      {label: 'Purchase', icon: ArrowLeftRight},
+      {label: 'Vendors', icon: Building2},
+      {label: 'Store', icon: Warehouse},
     ],
   },
   {
     title: 'Accounts',
     items: [
-      {label: 'Account Head', icon: '📑'},
-      {label: 'Account Entry', icon: '✏️'},
-      {label: 'Account Reports', icon: '📊'},
-      {label: 'One Day Balance Sheet', icon: '📋'},
+      {label: 'Account Head', icon: Layers},
+      {label: 'Account Entry', icon: ClipboardPen},
+      {label: 'Account Reports', icon: FileText},
+      {label: 'One Day Balance Sheet', icon: ChartBarBig},
     ],
   },
   {
     title: 'Complaints',
     items: [
-      {label: 'User Complaint', icon: '⚠️'},
-      {label: 'Allocated Complaint', icon: '📌'},
-      {label: 'Subject Type', icon: '🏷️'},
-      {label: 'Complaint Report', icon: '📊'},
+      {label: 'User Complaint', icon: UserPlus},
+      {label: 'Allocated Complaint', icon: ClipboardPen},
+      {label: 'Subject Type', icon: BookOpen},
+      {label: 'Complaint Report', icon: FileText},
     ],
   },
   {
     title: 'Service Desk',
     items: [
-      {label: 'Alerts', icon: '🔔'},
-      {label: 'Support Tickets', icon: '🎫'},
+      {label: 'Alerts', icon: BellRing},
+      {label: 'Support Tickets', icon: Headphones},
     ],
   },
   {
     title: 'Recovery Officers',
     items: [
-      {label: 'Areas', icon: '📍'},
-      {label: 'Officers', icon: '👮'},
+      {label: 'Areas', icon: Map},
+      {label: 'Officers', icon: UserCheck},
     ],
   },
   {
     title: 'Human Resources',
     items: [
-      {label: 'Staff', icon: '👥'},
-      {label: 'Attendance', icon: '✅'},
-      {label: 'Advances & Loans', icon: '💰'},
+      {label: 'Staff', icon: Briefcase},
+      {label: 'Attendance', icon: CalendarDays},
+      {label: 'Advances & Loans', icon: HandHelping},
     ],
   },
   {
     title: 'Administration',
     items: [
-      {label: 'My Company Profile', icon: '🏢'},
-      {label: 'Companies', icon: '🏛️'},
-      {label: 'Roles & Permissions', icon: '🔐'},
-      {label: 'System Config', icon: '⚙️'},
-      {label: 'System Logs', icon: '📝'},
+      {label: 'My Company Profile', icon: Building},
+      {label: 'Companies', icon: Building2},
+      {label: 'Roles & Permissions', icon: ShieldCheck},
+      {label: 'System Config', icon: Settings},
+      {label: 'System Logs', icon: FileText},
     ],
   },
   {
     title: 'Reports',
     items: [
-      {label: 'User Collection', icon: '💵'},
-      {label: 'Deactivate Users List', icon: '🚫'},
-      {label: 'Package Wise List', icon: '📋'},
-      {label: 'Promise Date Reports', icon: '📅'},
-      {label: 'Allocated Defaulters', icon: '📌'},
-      {label: 'Expiry Wise Defaulters', icon: '⏰'},
-      {label: 'Month Wise Defaulters', icon: '📊'},
-      {label: 'Monthly Collections', icon: '💰'},
-      {label: 'User Creator Summary', icon: '📑'},
+      {label: 'User Collection', icon: Wallet},
+      {label: 'Deactivate Users List', icon: UserSearch},
+      {label: 'Package Wise List', icon: Box},
+      {label: 'Promise Date Reports', icon: FileClock},
+      {label: 'Allocated Defaulters', icon: TriangleAlert},
+      {label: 'Expiry Wise Defaulters', icon: ChartBarBig},
+      {label: 'Month Wise Defaulters', icon: FileText},
+      {label: 'Monthly Collections', icon: HandCoins},
+      {label: 'User Creator Summary', icon: UserPlus},
     ],
   },
 ];
@@ -268,11 +325,15 @@ function DrawerContent(props: any) {
       {/* Footer */}
       <View style={styles.drawerFooter}>
         <TouchableOpacity style={styles.footerItem}>
-          <Text style={styles.footerIcon}>❓</Text>
+          <View style={styles.navItemIconBox}>
+            <LifeBuoy size={16} color="#9CA3AF" />
+          </View>
           <Text style={styles.footerLabel}>Support</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.footerItem} onPress={handleLogout}>
-          <Text style={styles.footerIcon}>🚪</Text>
+          <View style={styles.navItemIconBox}>
+            <LogOut size={16} color="#9CA3AF" />
+          </View>
           <Text style={styles.footerLabel}>Logout</Text>
         </TouchableOpacity>
       </View>
@@ -327,11 +388,35 @@ export default function DrawerNavigator() {
       />
       <Drawer.Screen
         name="Inquiries"
-        component={() => <PlaceholderScreen title="New Inquiries" />}
+        component={InquiriesScreen}
       />
       <Drawer.Screen
         name="Corporate"
-        component={() => <PlaceholderScreen title="Corporate Clients" />}
+        component={CorporateScreen}
+      />
+      <Drawer.Screen
+        name="Customers"
+        component={CustomersScreen}
+      />
+      <Drawer.Screen
+        name="Guarantors"
+        component={GuarantorsScreen}
+      />
+      <Drawer.Screen
+        name="Packages"
+        component={PackagesScreen}
+      />
+      <Drawer.Screen
+        name="Products"
+        component={ProductsScreen}
+      />
+      <Drawer.Screen
+        name="InstallmentPlans"
+        component={InstallmentPlansScreen}
+      />
+      <Drawer.Screen
+        name="SalesCustomers"
+        component={SalesCustomersScreen}
       />
       <Drawer.Screen
         name="Sales"
@@ -518,13 +603,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 10,
-  },
-  footerIcon: {
-    fontSize: 18,
-    marginRight: 12,
-    width: 24,
-    textAlign: 'center',
-    color: '#D1D5DB',
   },
   footerLabel: {
     fontSize: 14,

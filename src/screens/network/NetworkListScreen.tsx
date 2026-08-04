@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -10,8 +10,12 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  Animated,
+  Modal,
 } from 'react-native';
 import {useFocusEffect, useNavigation} from '@react-navigation/native';
+import {DrawerActions} from '@react-navigation/native';
+import {useDrawerStatus} from '@react-navigation/drawer';
 import {
   Pencil,
   Trash2,
@@ -19,11 +23,54 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   ArrowRight,
+  Check,
 } from 'lucide-react-native';
+import Svg, {Rect, Defs, LinearGradient, Stop} from 'react-native-svg';
 import {areasApi, popsApi, oltsApi, splittersApi, boxesApi} from '../../api/network';
 import {ModuleConfig, StatusBadge, UtilizationBar} from './networkConfig';
 import {GradientButton} from '../../components/GradientButton';
+
+function DoorMenuIcon({open}: {open: boolean}) {
+  const slide = useRef(new Animated.Value(open ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(slide, {
+      toValue: open ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [open, slide]);
+
+  const translateX = slide.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-3, 3],
+  });
+
+  return (
+    <View style={styles.doorIconBox}>
+      <Animated.View style={[styles.doorIconLine, {transform: [{translateX}]}]} />
+    </View>
+  );
+}
+
+function HeroDivider({from, to}: {from: string; to: string}) {
+  return (
+    <View style={styles.heroDivider}>
+      <Svg height="2" width="100%">
+        <Defs>
+          <LinearGradient id="heroGrad" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor={from} stopOpacity="1" />
+            <Stop offset="0.7" stopColor={to} stopOpacity="0.6" />
+            <Stop offset="1" stopColor={to} stopOpacity="0" />
+          </LinearGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="2" fill="url(#heroGrad)" />
+      </Svg>
+    </View>
+  );
+}
 
 type Crud = {
   list: () => Promise<any[]>;
@@ -45,17 +92,20 @@ const PAGE_SIZES = [5, 10, 20, 50, 100];
 export default function NetworkListScreen({route, navigation}: any) {
   const config: ModuleConfig = route.params.config;
   const nav = useNavigation();
+  const drawerStatus = useDrawerStatus();
   const [items, setItems] = useState<any[]>([]);
   const [filtered, setFiltered] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [pageInput, setPageInput] = useState('');
+  const [pageSizeOpen, setPageSizeOpen] = useState(false);
 
   const openDrawer = () => {
-    nav.dispatch({type: 'OPEN_DRAWER'} as never);
+    nav.dispatch(DrawerActions.openDrawer());
   };
 
   const fetchData = async (isRefresh = false) => {
@@ -65,11 +115,12 @@ export default function NetworkListScreen({route, navigation}: any) {
       } else {
         setLoading(true);
       }
+      setError(null);
       const data = await crudMap[config.key].list();
       setItems(data);
       setFiltered(data);
     } catch {
-      Alert.alert('Error', `Failed to load ${config.plural}`);
+      setError(`Failed to load ${config.plural}. Check your connection and try again.`);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -213,21 +264,30 @@ export default function NetworkListScreen({route, navigation}: any) {
 
   const statCards = config.stats;
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.menuButton} onPress={openDrawer}>
-          <Text style={styles.menuIcon}>☰</Text>
-        </TouchableOpacity>
-        <View style={[styles.headerIconBox, {backgroundColor: config.gradient[1]}]}>
-          <config.icon size={20} color="#FFFFFF" />
-        </View>
-        <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle}>{config.title}</Text>
-          <Text style={styles.headerSubtitle}>{config.subtitle}</Text>
+  const topBar = (
+    <View style={styles.topBar}>
+      <View style={[styles.topBarAccent, {backgroundColor: config.gradient[0]}]} />
+      <TouchableOpacity style={styles.menuButton} onPress={openDrawer}>
+        <DoorMenuIcon open={drawerStatus === 'open'} />
+      </TouchableOpacity>
+      <Text style={[styles.topBarTitle, {color: config.gradient[0]}]}>Network</Text>
+    </View>
+  );
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        {topBar}
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color="#4F46E5" />
         </View>
       </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {topBar}
 
       <FlatList
         data={paginated}
@@ -235,6 +295,18 @@ export default function NetworkListScreen({route, navigation}: any) {
         renderItem={renderRow}
         ListHeaderComponent={
           <View>
+            {/* Hero Header */}
+            <View style={styles.heroHeader}>
+              <View style={[styles.heroIconBox, {backgroundColor: config.gradient[0]}]}>
+                <config.icon size={20} color="#FFFFFF" />
+              </View>
+              <View style={styles.heroInfo}>
+                <Text style={styles.heroTitle}>{config.title}</Text>
+                <Text style={styles.heroSubtitle}>{config.subtitle}</Text>
+              </View>
+            </View>
+            <HeroDivider from={config.gradient[0]} to={config.gradient[1]} />
+
             {/* Stat cards */}
             <ScrollView
               horizontal
@@ -273,21 +345,36 @@ export default function NetworkListScreen({route, navigation}: any) {
                 />
               </View>
               <GradientButton
-                colors={config.gradient}
+                colors={['#166534', '#22c55e']}
                 style={styles.addBtn}
                 onPress={() => navigation.navigate('NetworkForm', {config})}>
                 <PlusCircle size={16} color="#FFFFFF" />
-                <Text style={styles.addBtnText}>{config.addButtonLabel}</Text>
+                <Text style={styles.addBtnText} numberOfLines={1}>
+                  {config.addButtonLabel}
+                </Text>
               </GradientButton>
             </View>
           </View>
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>{config.emptyIcon}</Text>
-            <Text style={styles.emptyTitle}>{config.emptyTitle}</Text>
-            <Text style={styles.emptyText}>{config.emptyText}</Text>
-          </View>
+          error ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyIcon}>⚠️</Text>
+              <Text style={styles.emptyTitle}>Failed to load {config.plural}</Text>
+              <Text style={styles.emptyText}>{error}</Text>
+              <TouchableOpacity
+                style={[styles.retryBtn, {backgroundColor: config.gradient[0]}]}
+                onPress={() => fetchData()}>
+                <Text style={styles.retryBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <Text style={styles.emptyIcon}>{config.emptyIcon}</Text>
+              <Text style={styles.emptyTitle}>{config.emptyTitle}</Text>
+              <Text style={styles.emptyText}>{config.emptyText}</Text>
+            </View>
+          )
         }
         ListFooterComponent={
           <View style={styles.pagination}>
@@ -297,17 +384,16 @@ export default function NetworkListScreen({route, navigation}: any) {
               {config.plural}
             </Text>
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.pageControls}>
-                <TouchableOpacity
-                  style={[styles.pageBtn, currentPage === 1 && styles.pageBtnDisabled]}
-                  disabled={currentPage === 1}
-                  onPress={() => setCurrentPage(prev => Math.max(1, prev - 1))}>
-                  <ChevronLeft size={14} color={currentPage === 1 ? '#D1D5DB' : '#374151'} />
-                  <Text style={[styles.pageBtnText, currentPage === 1 && styles.pageBtnTextDisabled]}>
-                    Previous
-                  </Text>
-                </TouchableOpacity>
+            <View style={styles.pageControls}>
+              <TouchableOpacity
+                style={[styles.pageBtn, currentPage === 1 && styles.pageBtnDisabled]}
+                disabled={currentPage === 1}
+                onPress={() => setCurrentPage(prev => Math.max(1, prev - 1))}>
+                <ChevronLeft size={14} color={currentPage === 1 ? '#D1D5DB' : '#374151'} />
+                <Text style={[styles.pageBtnText, currentPage === 1 && styles.pageBtnTextDisabled]}>
+                  Previous
+                </Text>
+              </TouchableOpacity>
 
                 {getVisiblePages().map(page => (
                   <TouchableOpacity
@@ -386,32 +472,17 @@ export default function NetworkListScreen({route, navigation}: any) {
                     color={currentPage === totalPages ? '#D1D5DB' : '#374151'}
                   />
                 </TouchableOpacity>
-              </View>
-            </ScrollView>
+            </View>
 
             {/* Page size selector */}
             <View style={styles.pageSizeRow}>
               <Text style={styles.pageSizeLabel}>Rows per page</Text>
-              {PAGE_SIZES.map(size => (
-                <TouchableOpacity
-                  key={size}
-                  style={[
-                    styles.pageSizeChip,
-                    pageSize === size && {backgroundColor: config.gradient[0]},
-                  ]}
-                  onPress={() => {
-                    setPageSize(size);
-                    setCurrentPage(1);
-                  }}>
-                  <Text
-                    style={[
-                      styles.pageSizeText,
-                      pageSize === size && styles.pageSizeTextActive,
-                    ]}>
-                    {size}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              <TouchableOpacity
+                style={styles.pageSizeSelect}
+                onPress={() => setPageSizeOpen(true)}>
+                <Text style={styles.pageSizeSelectText}>{pageSize}</Text>
+                <ChevronDown size={16} color="#6B7280" />
+              </TouchableOpacity>
             </View>
           </View>
         }
@@ -424,6 +495,47 @@ export default function NetworkListScreen({route, navigation}: any) {
           />
         }
       />
+
+      <Modal
+        visible={pageSizeOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPageSizeOpen(false)}>
+        <View style={styles.pageSizeOverlay}>
+          <View style={styles.pageSizeSheet}>
+            <View style={styles.pageSizeSheetHeader}>
+              <Text style={styles.pageSizeSheetTitle}>Rows per page</Text>
+              <TouchableOpacity onPress={() => setPageSizeOpen(false)}>
+                <Text style={styles.pageSizeSheetClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            {PAGE_SIZES.map(size => {
+              const active = pageSize === size;
+              return (
+                <TouchableOpacity
+                  key={size}
+                  style={styles.pageSizeOption}
+                  onPress={() => {
+                    setPageSize(size);
+                    setCurrentPage(1);
+                    setPageSizeOpen(false);
+                  }}>
+                  <Text
+                    style={[
+                      styles.pageSizeOptionText,
+                      active && {color: config.gradient[0]},
+                    ]}>
+                    {size} per page
+                  </Text>
+                  {active ? (
+                    <Check size={16} color={config.gradient[0]} />
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -431,37 +543,88 @@ export default function NetworkListScreen({route, navigation}: any) {
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: '#F3F4F6'},
   centered: {flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F3F4F6'},
-  header: {
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 56,
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+    alignSelf: 'flex-start',
+    marginTop: 50,
+    marginLeft: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.06)',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  topBarAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
+  },
+  topBarTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    paddingRight: 8,
   },
   menuButton: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     borderRadius: 10,
     backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
-  menuIcon: {fontSize: 20, color: '#374151'},
-  headerIconBox: {
-    width: 38,
-    height: 38,
+  doorIconBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#374151',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  doorIconLine: {
+    width: 12,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: '#374151',
+  },
+  heroHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+  heroIconBox: {
+    width: 42,
+    height: 42,
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    shadowOffset: {width: 0, height: 3},
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
   },
-  headerInfo: {flex: 1},
-  headerTitle: {fontSize: 18, fontWeight: '700', color: '#111827'},
-  headerSubtitle: {fontSize: 12, color: '#6B7280', marginTop: 2},
+  heroInfo: {flex: 1},
+  heroTitle: {fontSize: 22, fontWeight: '700', color: '#111827', letterSpacing: -0.5},
+  heroSubtitle: {fontSize: 12, color: '#6B7280', marginTop: 2},
+  heroDivider: {
+    marginHorizontal: 20,
+    marginBottom: 4,
+  },
   statsRow: {paddingHorizontal: 16, paddingTop: 14, gap: 10},
   statCard: {
     flexDirection: 'row',
@@ -508,6 +671,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    flexShrink: 0,
     shadowOffset: {width: 0, height: 3},
     shadowOpacity: 0.2,
     shadowRadius: 6,
@@ -565,7 +729,7 @@ const styles = StyleSheet.create({
   emptyText: {fontSize: 13, color: '#6B7280'},
   pagination: {paddingTop: 6},
   paginationInfo: {fontSize: 13, color: '#6B7280', marginBottom: 10},
-  pageControls: {flexDirection: 'row', alignItems: 'center', gap: 4},
+  pageControls: {flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap'},
   pageBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -615,18 +779,63 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  pageSizeRow: {flexDirection: 'row', alignItems: 'center', marginTop: 12, flexWrap: 'wrap'},
+  pageSizeRow: {flexDirection: 'row', alignItems: 'center', marginTop: 12},
   pageSizeLabel: {fontSize: 12, color: '#6B7280', marginRight: 8},
-  pageSizeChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
+  pageSizeSelect: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: '#D1D5DB',
+    borderRadius: 8,
     backgroundColor: '#FFFFFF',
-    marginRight: 6,
-    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minWidth: 84,
   },
-  pageSizeText: {fontSize: 12, color: '#374151'},
-  pageSizeTextActive: {color: '#FFFFFF', fontWeight: '600'},
+  pageSizeSelectText: {fontSize: 13, color: '#111827', fontWeight: '600', marginRight: 8},
+  pageSizeOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  pageSizeSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 30,
+  },
+  pageSizeSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  pageSizeSheetTitle: {fontSize: 16, fontWeight: '600', color: '#111827'},
+  pageSizeSheetClose: {fontSize: 16, color: '#6B7280', padding: 4},
+  pageSizeOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  pageSizeOptionText: {fontSize: 15, color: '#374151', fontWeight: '500'},
+  retryBtn: {
+    marginTop: 14,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  retryBtnText: {color: '#FFFFFF', fontSize: 14, fontWeight: '600'},
 });

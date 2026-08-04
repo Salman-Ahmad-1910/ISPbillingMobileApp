@@ -1,6 +1,6 @@
 import React, {createContext, useContext, useEffect, useState, useCallback} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import apiClient from '../api/client';
+import apiClient, {setUnauthorizedHandler} from '../api/client';
 import {User, Company, ApiResponse, AuthResponse} from '../types';
 
 interface AuthContextType {
@@ -17,6 +17,35 @@ interface AuthContextType {
   refreshCompanies: () => Promise<void>;
 }
 
+// A JWT payload is base64url-encoded JSON with an `exp` claim (unix seconds).
+// We decode it locally at startup so an expired token is cleared before the app
+// ever enters the authenticated UI, instead of waiting for a 401.
+function base64UrlDecode(input: string): string {
+  let b64 = input.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = b64.length % 4;
+  if (pad) {
+    b64 += '='.repeat(4 - pad);
+  }
+  return atob(b64);
+}
+
+function isTokenExpired(token: string): boolean {
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) {
+      return true;
+    }
+    const payload = JSON.parse(base64UrlDecode(parts[1]));
+    const exp = payload.exp as number | undefined;
+    if (typeof exp !== 'number' || !Number.isFinite(exp)) {
+      return true;
+    }
+    return exp * 1000 <= Date.now();
+  } catch {
+    return true;
+  }
+}
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({children}: {children: React.ReactNode}) {
@@ -28,6 +57,14 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
 
   useEffect(() => {
     bootstrapAuth();
+    setUnauthorizedHandler(() => {
+      clearStoredSession();
+      setUserToken(null);
+      setUser(null);
+      setCompanyId(null);
+      setCompanies([]);
+    });
+    return () => setUnauthorizedHandler(null);
   }, []);
 
   const bootstrapAuth = async () => {
@@ -36,18 +73,24 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
       const storedCompanyId = await AsyncStorage.getItem('company_id');
       const userData = await AsyncStorage.getItem('user_data');
 
-      if (token && userData && storedCompanyId) {
+      if (token && userData && storedCompanyId && !isTokenExpired(token)) {
         setUserToken(token);
         setCompanyId(storedCompanyId);
         setUser(JSON.parse(userData));
+      } else if (token) {
+        await clearStoredSession();
       }
     } catch {
-      await AsyncStorage.removeItem('auth_token');
-      await AsyncStorage.removeItem('company_id');
-      await AsyncStorage.removeItem('user_data');
+      await clearStoredSession();
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const clearStoredSession = async () => {
+    await AsyncStorage.removeItem('auth_token');
+    await AsyncStorage.removeItem('company_id');
+    await AsyncStorage.removeItem('user_data');
   };
 
   const login = useCallback(async (email: string, password: string) => {
@@ -99,9 +142,7 @@ export function AuthProvider({children}: {children: React.ReactNode}) {
     } catch {
       // Ignore logout errors, clear locally regardless
     }
-    await AsyncStorage.removeItem('auth_token');
-    await AsyncStorage.removeItem('company_id');
-    await AsyncStorage.removeItem('user_data');
+    await clearStoredSession();
     setUserToken(null);
     setUser(null);
     setCompanyId(null);

@@ -17,6 +17,7 @@ import {ChevronDown, Check} from 'lucide-react-native';
 import {areasApi, popsApi, oltsApi, splittersApi, boxesApi} from '../../api/network';
 import {ModuleConfig, ConfigField} from './networkConfig';
 import {GradientButton} from '../../components/GradientButton';
+import AnimatedBackArrow from '../../components/AnimatedBackArrow';
 
 const crudMap: Record<string, any> = {
   areas: areasApi,
@@ -233,11 +234,9 @@ export default function NetworkFormScreen({route, navigation}: any) {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
+        <View style={[styles.headerAccent, {backgroundColor: config.gradient[0]}]} />
+        <AnimatedBackArrow onPress={() => navigation.goBack()} color={config.gradient[0]} />
         <Text style={styles.headerTitle}>{config.formTitle(isEdit)}</Text>
-        <View style={styles.spacer} />
       </View>
 
       {loadingOptions ? (
@@ -249,7 +248,7 @@ export default function NetworkFormScreen({route, navigation}: any) {
           {config.fields.map(field => renderField(field))}
 
           <GradientButton
-            colors={config.gradient}
+            colors={['#166534', '#22c55e']}
             style={styles.saveBtn}
             onPress={handleSave}
             disabled={loading}>
@@ -397,19 +396,32 @@ const styles = StyleSheet.create({
   centered: {flex: 1, justifyContent: 'center', alignItems: 'center'},
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 56,
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+    alignSelf: 'flex-start',
+    marginTop: 50,
+    marginLeft: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.06)',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 5,
   },
-  backBtn: {paddingVertical: 4},
-  backText: {fontSize: 16, color: '#4F46E5', fontWeight: '500'},
-  headerTitle: {fontSize: 18, fontWeight: '600', color: '#111827'},
-  spacer: {width: 60},
+  headerAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 16,
+    borderBottomLeftRadius: 16,
+  },
+  headerTitle: {fontSize: 17, fontWeight: '700', color: '#111827', paddingRight: 8},
   form: {paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40},
   saveBtn: {
     borderRadius: 10,

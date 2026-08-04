@@ -164,6 +164,44 @@ export interface DistributionBox {
   companyId?: string;
 }
 
+export interface Connection {
+  id: string;
+  companyId: string;
+  internetId: string;
+  name: string;
+  address?: string;
+  cell?: string;
+  mobile?: string;
+  installationAmount: number;
+  otherAmount: number;
+  installationDate?: string;
+  rechargeDate?: string;
+  connectionProvider?: string;
+  connectionType: string;
+  boxNumber?: string;
+  packageCable?: string;
+  discount?: string;
+  amount: number;
+  packageInternet?: string;
+  createBalance: boolean;
+  balanceDays: number;
+  sameDiscount?: string;
+  sameAmount: number;
+  status: string;
+  sublocalityId?: string;
+  splitterId?: string;
+  splitterPort?: number;
+  lastPaymentDate?: string;
+  remainingAmount?: number;
+  cnic?: string;
+  leavingDate?: string;
+  deactivationReason?: string;
+  comments?: string;
+  badDebt?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Subscriber {
   id: string;
   subscriber_identity: string;
@@ -226,6 +264,101 @@ export interface CorporateCustomer {
   contractStartDate: string;
   contractEndDate: string;
   totalConnections: number;
+  companyId?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  cnic: string;
+  phone: string;
+  city: string;
+  status: 'active' | 'inactive' | 'blacklisted';
+  totalInvoices?: number;
+  outstandingBalance?: number;
+  companyId?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Guarantor {
+  id: string;
+  name: string;
+  cnic: string;
+  phone: string;
+  customerId: string;
+  customerName: string;
+  companyId?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  stock: number;
+  unitType: string;
+  taxPercent?: number;
+  image?: string;
+  companyId?: string;
+  barcode?: string;
+  brandId?: string;
+  brandName?: string;
+  productTypeId?: string;
+  productTypeName?: string;
+  purchasePrice?: number;
+  salePrice?: number;
+  discount?: number;
+  serialNumber?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface Brand {
+  id: string;
+  name: string;
+  description?: string;
+  companyId?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProductType {
+  id: string;
+  name: string;
+  companyId?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface UnitType {
+  id: string;
+  name: string;
+  companyId?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SerialNumberPoolEntry {
+  id: string;
+  serialNumber: string;
+  status: 'available' | 'used';
+  productId?: string;
+  companyId?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface InstallmentPlan {
+  id: string;
+  name: string;
+  installments: number;
+  percentageIncrease: number;
+  status?: string;
   companyId?: string;
   created_at?: string;
   updated_at?: string;

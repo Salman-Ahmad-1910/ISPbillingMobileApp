@@ -19,11 +19,10 @@ import {useFocusEffect, useNavigation, DrawerActions} from '@react-navigation/na
 import {useDrawerStatus} from '@react-navigation/drawer';
 import Svg, {Rect, Defs, LinearGradient, Stop} from 'react-native-svg';
 import {
-  UserPlus,
-  Sparkles,
-  RefreshCw,
-  CheckCircle2,
-  XCircle,
+  PackageOpen,
+  Boxes,
+  Package as PackageIcon,
+  Layers,
   Search,
   PlusCircle,
   ChevronDown,
@@ -31,73 +30,42 @@ import {
   ChevronRight,
   ArrowRight,
   Check,
-  Send,
-  Users,
+  Trash2,
 } from 'lucide-react-native';
-import {getInquiries, createInquiry, updateInquiry, deleteInquiry, getPackages} from '../../api/subscribers';
-import {areasApi, boxesApi} from '../../api/network';
-import {Inquiry, Area, DistributionBox, Package} from '../../types';
+import {
+  getProducts,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  getBrands,
+  getProductTypes,
+  getUnitTypes,
+  getSerialNumberPool,
+  getNextSerialNumber,
+  addSerialNumbers,
+  deleteSerialNumberEntry,
+} from '../../api/inventory';
+import {Product, Brand, ProductType, UnitType, SerialNumberPoolEntry} from '../../types';
 import {GradientButton} from '../../components/GradientButton';
 import {GradientView} from '../../components/GradientView';
 
 const PAGE_SIZES = [5, 10, 20, 50, 100];
 
-const TYPE_LABELS: Record<string, string> = {
-  both: 'Both',
-  internet: 'Internet',
-  tv_cable: 'TV Cable',
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  new: '#3B82F6',
-  'follow-up': '#F59E0B',
-  converted: '#10B981',
-  closed: '#EF4444',
-};
-
-const STATUS_GRADIENTS: Record<string, [string, string]> = {
-  new: ['#93C5FD', '#3B82F6'],
-  'follow-up': ['#FCD34D', '#F59E0B'],
-  converted: ['#34D399', '#10B981'],
-  closed: ['#FCA5A5', '#EF4444'],
-};
-
-const MONTHS = [
-  {value: '0', label: 'January'},
-  {value: '1', label: 'February'},
-  {value: '2', label: 'March'},
-  {value: '3', label: 'April'},
-  {value: '4', label: 'May'},
-  {value: '5', label: 'June'},
-  {value: '6', label: 'July'},
-  {value: '7', label: 'August'},
-  {value: '8', label: 'September'},
-  {value: '9', label: 'October'},
-  {value: '10', label: 'November'},
-  {value: '11', label: 'December'},
-];
-
 type FilterOption = {label: string; value: string};
 
-const emptyForm: Partial<Inquiry> = {
+const emptyForm: Partial<Product> = {
   name: '',
-  internetId: '',
-  cell: '',
-  mobile: '',
-  address: '',
-  installationAmount: 0,
-  otherAmount: 0,
-  installationDate: '',
-  rechargeDate: '',
-  subLocality: '',
-  connectionType: '',
-  boxNumber: '',
-  packageCable: '',
+  category: '',
+  barcode: '',
+  brandId: '',
+  brandName: '',
+  productTypeId: '',
+  productTypeName: '',
+  unitType: 'piece',
+  serialNumber: '',
+  purchasePrice: 0,
+  salePrice: 0,
   discount: 0,
-  amount: 0,
-  comments: '',
-  status: 'new',
-  notes: '',
 };
 
 function DoorMenuIcon({open}: {open: boolean}) {
@@ -123,56 +91,55 @@ function DoorMenuIcon({open}: {open: boolean}) {
   );
 }
 
-function InquiryDivider() {
+function ProductsDivider() {
   return (
     <View style={styles.heroDivider}>
       <Svg height="2" width="100%">
         <Defs>
-          <LinearGradient id="inquiryHeroGrad" x1="0" y1="0" x2="1" y2="0">
+          <LinearGradient id="productsHeroGrad" x1="0" y1="0" x2="1" y2="0">
             <Stop offset="0" stopColor="#10B981" stopOpacity="1" />
-            <Stop offset="0.7" stopColor="#7C3AED" stopOpacity="0.6" />
-            <Stop offset="1" stopColor="#7C3AED" stopOpacity="0" />
+            <Stop offset="0.7" stopColor="#16A34A" stopOpacity="0.6" />
+            <Stop offset="1" stopColor="#16A34A" stopOpacity="0" />
           </LinearGradient>
         </Defs>
-        <Rect x="0" y="0" width="100%" height="2" fill="url(#inquiryHeroGrad)" />
+        <Rect x="0" y="0" width="100%" height="2" fill="url(#productsHeroGrad)" />
       </Svg>
     </View>
   );
 }
 
-export default function InquiriesScreen() {
+export default function ProductsScreen() {
   const nav = useNavigation();
   const drawerStatus = useDrawerStatus();
-  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
-  const [filtered, setFiltered] = useState<Inquiry[]>([]);
-  const [areas, setAreas] = useState<Area[]>([]);
-  const [boxes, setBoxes] = useState<DistributionBox[]>([]);
-  const [packages, setPackages] = useState<Package[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [productTypes, setProductTypes] = useState<ProductType[]>([]);
+  const [unitTypes, setUnitTypes] = useState<UnitType[]>([]);
+  const [filtered, setFiltered] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
-  const [filterArea, setFilterArea] = useState('all');
-  const [filterType, setFilterType] = useState('all');
-  const [filterMonth, setFilterMonth] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [pageInput, setPageInput] = useState('');
   const [pageSizeOpen, setPageSizeOpen] = useState(false);
-  const [filterSheet, setFilterSheet] = useState<{
-    key: string;
-    title: string;
-    options: FilterOption[];
-    selected: string;
-  } | null>(null);
   const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<Inquiry | null>(null);
-  const [form, setForm] = useState<Partial<Inquiry>>(emptyForm);
+  const [editing, setEditing] = useState<Product | null>(null);
+  const [form, setForm] = useState<Partial<Product>>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [fetchingNextSn, setFetchingNextSn] = useState(false);
   const [selectSheet, setSelectSheet] = useState<{
-    key: 'subLocality' | 'boxNumber' | 'packageCable';
+    key: 'brandId' | 'productTypeId' | 'unitType';
     title: string;
     options: FilterOption[];
   } | null>(null);
+
+  // SN Pool modal state
+  const [snPoolOpen, setSnPoolOpen] = useState(false);
+  const [poolEntries, setPoolEntries] = useState<SerialNumberPoolEntry[]>([]);
+  const [poolLoading, setPoolLoading] = useState(false);
+  const [poolRaw, setPoolRaw] = useState('');
+  const [poolSaving, setPoolSaving] = useState(false);
 
   const openDrawer = () => {
     nav.dispatch(DrawerActions.openDrawer());
@@ -185,18 +152,18 @@ export default function InquiriesScreen() {
       } else {
         setLoading(true);
       }
-      const [data, areaData, boxData, packageData] = await Promise.all([
-        getInquiries(),
-        areasApi.list().catch(() => []),
-        boxesApi.list().catch(() => []),
-        getPackages().catch(() => []),
+      const [productData, brandData, productTypeData, unitTypeData] = await Promise.all([
+        getProducts(),
+        getBrands().catch(() => []),
+        getProductTypes().catch(() => []),
+        getUnitTypes().catch(() => []),
       ]);
-      setInquiries(data);
-      setAreas(areaData);
-      setBoxes(boxData);
-      setPackages(packageData);
+      setProducts(productData);
+      setBrands(brandData);
+      setProductTypes(productTypeData);
+      setUnitTypes(unitTypeData);
     } catch {
-      Alert.alert('Error', 'Failed to load inquiries');
+      Alert.alert('Error', 'Failed to load products');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -206,113 +173,59 @@ export default function InquiriesScreen() {
   useFocusEffect(useCallback(() => {fetchData();}, [fetchData]));
 
   useEffect(() => {
-    let result = inquiries;
-
-    if (filterArea !== 'all') {
-      result = result.filter(i => i.subLocality === filterArea);
-    }
-    if (filterType !== 'all') {
-      result = result.filter(i => i.connectionType === filterType);
-    }
-    if (filterMonth !== 'all') {
-      result = result.filter(i => {
-        const d = i.installationDate || i.created_at;
-        if (!d) {
-          return false;
-        }
-        return new Date(d).getMonth().toString() === filterMonth;
-      });
-    }
+    let result = products;
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(
-        i =>
-          i.name.toLowerCase().includes(q) ||
-          (i.internetId || '').toLowerCase().includes(q) ||
-          (i.cell || '').toLowerCase().includes(q) ||
-          (i.mobile || '').toLowerCase().includes(q) ||
-          (i.address || '').toLowerCase().includes(q),
+        p =>
+          p.name.toLowerCase().includes(q) ||
+          (p.barcode || '').toLowerCase().includes(q) ||
+          (p.brandName || '').toLowerCase().includes(q) ||
+          (p.category || '').toLowerCase().includes(q) ||
+          (p.productTypeName || '').toLowerCase().includes(q) ||
+          (p.serialNumber || '').toLowerCase().includes(q),
       );
     }
-
     setFiltered(result);
     setCurrentPage(1);
-  }, [inquiries, filterArea, filterType, filterMonth, search]);
+  }, [products, search]);
 
-  const stats = useMemo(
-    () => ({
-      total: inquiries.length,
-      newCount: inquiries.filter(i => i.status === 'new').length,
-      followUp: inquiries.filter(i => i.status === 'follow-up').length,
-      converted: inquiries.filter(i => i.status === 'converted').length,
-      closed: inquiries.filter(i => i.status === 'closed').length,
-    }),
-    [inquiries],
+  const totalStock = useMemo(
+    () => products.reduce((sum, p) => sum + (Number(p.stock) || 0), 0),
+    [products],
+  );
+
+  const categoriesCount = useMemo(
+    () => new Set(products.map(p => (p.productTypeName || p.category || '')).filter(Boolean)).size,
+    [products],
   );
 
   const statCards: {key: string; label: string; value: number; icon: any; gradient: [string, string]}[] = [
-    {key: 'total', label: 'Total', value: stats.total, icon: UserPlus, gradient: ['#10B981', '#7C3AED']},
-    {key: 'new', label: 'New', value: stats.newCount, icon: Sparkles, gradient: ['#3B82F6', '#0891B2']},
-    {key: 'follow-up', label: 'Follow-up', value: stats.followUp, icon: RefreshCw, gradient: ['#F59E0B', '#EA580C']},
-    {key: 'converted', label: 'Converted', value: stats.converted, icon: CheckCircle2, gradient: ['#10B981', '#16A34A']},
-    {key: 'closed', label: 'Closed', value: stats.closed, icon: XCircle, gradient: ['#F43F5E', '#DB2777']},
+    {key: 'total', label: 'Total Products', value: products.length, icon: PackageOpen, gradient: ['#10B981', '#16A34A']},
+    {key: 'stock', label: 'Total Stock', value: totalStock, icon: Boxes, gradient: ['#3B82F6', '#0891B2']},
+    {key: 'categories', label: 'Categories', value: categoriesCount, icon: PackageIcon, gradient: ['#A855F7', '#7C3AED']},
   ];
 
-  const areaOptions = useMemo<FilterOption[]>(() => {
-    const unique = Array.from(new Set(areas.map(a => a.subLocality).filter((v): v is string => !!v)));
-    return [
-      {label: 'All Sublocalities', value: 'all'},
-      ...unique.map(s => ({label: s, value: s})),
-    ];
-  }, [areas]);
-
-  const typeOptions: FilterOption[] = [
-    {label: 'All Types', value: 'all'},
-    {label: 'Both', value: 'both'},
-    {label: 'Internet', value: 'internet'},
-    {label: 'TV Cable', value: 'tv_cable'},
-  ];
-
-  const monthOptions: FilterOption[] = [
-    {label: 'All Months', value: 'all'},
-    ...MONTHS.map(m => ({label: m.label, value: m.value})),
-  ];
-
-  const openFilterSheet = (key: string, title: string, options: FilterOption[], selected: string) => {
-    setFilterSheet({key, title, options, selected});
-  };
-
-  const onFilterSelect = (value: string) => {
-    const key = filterSheet?.key;
-    if (key === 'area') {
-      setFilterArea(value);
-    } else if (key === 'type') {
-      setFilterType(value);
-    } else if (key === 'month') {
-      setFilterMonth(value);
-    }
-    setFilterSheet(null);
-  };
-
-  const handleDelete = (id: string, name: string) => {
-    Alert.alert('Delete Inquiry', `Delete inquiry for ${name}?`, [
+  const handleDelete = (product: Product) => {
+    Alert.alert('Delete Product', `Delete ${product.name}?`, [
       {text: 'Cancel', style: 'cancel'},
       {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
           try {
-            await deleteInquiry(id);
-            setInquiries(prev => prev.filter(i => i.id !== id));
-          } catch {
-            Alert.alert('Error', 'Failed to delete inquiry');
+            await deleteProduct(product.id);
+            setProducts(prev => prev.filter(p => p.id !== product.id));
+          } catch (err: any) {
+            const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to delete product';
+            Alert.alert('Error', msg);
           }
         },
       },
     ]);
   };
 
-  const setField = (key: keyof Inquiry, value: any) => {
+  const setField = (key: keyof Product, value: any) => {
     setForm(prev => ({...prev, [key]: value}));
   };
 
@@ -320,82 +233,167 @@ export default function InquiriesScreen() {
     setEditing(null);
     setForm({...emptyForm});
     setFormOpen(true);
+    setFetchingNextSn(true);
+    getNextSerialNumber()
+      .then(sn => {
+        if (sn) {
+          setForm(prev => ({...prev, serialNumber: sn}));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setFetchingNextSn(false));
   };
 
-  const openEdit = (inquiry: Inquiry) => {
-    setEditing(inquiry);
-    setForm({...emptyForm, ...inquiry});
+  const openEdit = (product: Product) => {
+    setEditing(product);
+    setForm({...emptyForm, ...product});
     setFormOpen(true);
+  };
+
+  const openSelectSheet = (key: 'brandId' | 'productTypeId' | 'unitType') => {
+    if (key === 'brandId') {
+      setSelectSheet({
+        key,
+        title: 'Search brand...',
+        options: brands.map(b => ({label: b.name, value: b.id})),
+      });
+    } else if (key === 'productTypeId') {
+      setSelectSheet({
+        key,
+        title: 'Search product type...',
+        options: productTypes.map(pt => ({label: pt.name, value: pt.id})),
+      });
+    } else {
+      setSelectSheet({
+        key,
+        title: 'Search unit type...',
+        options: unitTypes.map(ut => ({label: ut.name, value: ut.name})),
+      });
+    }
+  };
+
+  const onSelectSheetPick = (value: string) => {
+    if (selectSheet) {
+      if (selectSheet.key === 'brandId') {
+        const brand = brands.find(b => b.id === value);
+        setField('brandId', value);
+        setField('brandName', brand?.name || '');
+      } else if (selectSheet.key === 'productTypeId') {
+        const pt = productTypes.find(t => t.id === value);
+        setField('productTypeId', value);
+        setField('productTypeName', pt?.name || '');
+      } else {
+        setField('unitType', value);
+      }
+    }
+    setSelectSheet(null);
   };
 
   const handleSave = async () => {
     if (!form.name?.trim()) {
-      Alert.alert('Error', 'Name is required');
-      return;
-    }
-    if (!form.address?.trim()) {
-      Alert.alert('Error', 'Address is required');
+      Alert.alert('Error', 'Product name is required');
       return;
     }
     setSaving(true);
     try {
-      const payload: Partial<Inquiry> = {
+      const selectedType = productTypes.find(t => t.id === form.productTypeId);
+      const payload: Partial<Product> = {
         ...form,
         name: form.name.trim(),
-        address: form.address.trim(),
-        installationAmount: parseFloat(String(form.installationAmount)) || 0,
-        otherAmount: parseFloat(String(form.otherAmount)) || 0,
+        barcode: (form.barcode || '').trim(),
+        brandId: form.brandId || '',
+        brandName: form.brandName || '',
+        productTypeId: form.productTypeId || '',
+        productTypeName: form.productTypeName || '',
+        category: selectedType?.name || form.productTypeName || form.category || '',
+        unitType: form.unitType || 'piece',
+        serialNumber: (form.serialNumber || '').trim(),
+        price: parseFloat(String(form.salePrice)) || parseFloat(String(form.price)) || 0,
+        salePrice: parseFloat(String(form.salePrice)) || 0,
+        purchasePrice: parseFloat(String(form.purchasePrice)) || 0,
         discount: parseFloat(String(form.discount)) || 0,
-        amount: parseFloat(String(form.amount)) || 0,
-        status: form.status || 'new',
       };
       if (editing) {
-        await updateInquiry(editing.id, payload);
+        await updateProduct(editing.id, payload);
       } else {
-        await createInquiry(payload);
+        await createProduct(payload);
       }
       setFormOpen(false);
       setEditing(null);
       fetchData(false);
     } catch (err: any) {
-      const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to save inquiry';
+      const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to save product';
       Alert.alert('Error', msg);
     } finally {
       setSaving(false);
     }
   };
 
-  const selectLabel = (key: 'subLocality' | 'boxNumber' | 'packageCable') => {
-    const value = form[key];
-    if (!value) {
-      return '';
+  const loadPool = useCallback(async () => {
+    setPoolLoading(true);
+    try {
+      setPoolEntries(await getSerialNumberPool());
+    } catch {
+      Alert.alert('Error', 'Failed to load serial number pool');
+    } finally {
+      setPoolLoading(false);
     }
-    return String(value);
+  }, []);
+
+  const openSnPool = () => {
+    setPoolRaw('');
+    setSnPoolOpen(true);
+    loadPool();
   };
 
-  const openSelectSheet = (key: 'subLocality' | 'boxNumber' | 'packageCable') => {
-    let options: FilterOption[] = [];
-    let title = '';
-    if (key === 'subLocality') {
-      title = 'Sublocality';
-      options = Array.from(new Set(areas.map(a => a.subLocality).filter((v): v is string => !!v))).map(
-        s => ({label: s, value: s}),
-      );
-    } else if (key === 'boxNumber') {
-      title = 'Box Number';
-      options = boxes.map(b => ({label: b.name, value: b.name}));
-    } else if (key === 'packageCable') {
-      title = 'Package Cable';
-      options = packages.map(p => ({label: `${p.name} - PKR ${(p.price || 0).toLocaleString()}`, value: p.name}));
+  const parsedNumbers = useMemo(
+    () =>
+      poolRaw
+        .split(/[\s,;_/-]+/)
+        .map(s => s.trim())
+        .filter(Boolean),
+    [poolRaw],
+  );
+  const uniqueCount = useMemo(() => new Set(parsedNumbers).size, [parsedNumbers]);
+  const availableCount = useMemo(
+    () => poolEntries.filter(e => e.status === 'available').length,
+    [poolEntries],
+  );
+
+  const handleAddPoolNumbers = async () => {
+    if (uniqueCount === 0) {
+      return;
     }
-    setSelectSheet({key, title, options});
+    setPoolSaving(true);
+    try {
+      await addSerialNumbers(parsedNumbers);
+      setPoolRaw('');
+      await loadPool();
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to add serial numbers';
+      Alert.alert('Error', msg);
+    } finally {
+      setPoolSaving(false);
+    }
   };
 
-  const onSelectSheetPick = (value: string) => {
-    if (selectSheet) {
-      setField(selectSheet.key, value);
-    }
-    setSelectSheet(null);
+  const handleDeletePoolEntry = (entry: SerialNumberPoolEntry) => {
+    Alert.alert('Remove Serial Number', `Remove ${entry.serialNumber} from the pool?`, [
+      {text: 'Cancel', style: 'cancel'},
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteSerialNumberEntry(entry.id);
+            await loadPool();
+          } catch (err: any) {
+            const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to remove serial number';
+            Alert.alert('Error', msg);
+          }
+        },
+      },
+    ]);
   };
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -419,67 +417,46 @@ export default function InquiriesScreen() {
     }
   };
 
-  const renderItem = ({item, index}: {item: Inquiry; index: number}) => {
-    const displayId = item.internetId
-      ? item.internetId
-      : item.id
-      ? item.id.slice(0, 6)
-      : String((currentPage - 1) * pageSize + index + 1);
-    const contact = [item.cell, item.mobile].filter(Boolean).join(' / ');
-    const cableInternet = [
-      item.packageCable ? `C: ${item.packageCable}` : '',
-      item.boxNumber ? `Box: ${item.boxNumber}` : '',
-    ]
-      .filter(Boolean)
-      .join('  ');
+  const renderItem = ({item}: {item: Product}) => {
+    const typeName = item.productTypeName || item.category || '-';
     return (
       <TouchableOpacity style={styles.card} onPress={() => openEdit(item)}>
         <View style={styles.cardHeader}>
-          <Text style={styles.rowIndex}>{displayId}</Text>
+          <Text style={styles.rowIndex} numberOfLines={1}>{item.barcode || '-'}</Text>
           <View style={styles.cardInfo}>
             <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
           </View>
-          <GradientView
-            colors={STATUS_GRADIENTS[item.status] || ['#9CA3AF', '#6B7280']}
-            style={styles.statusDot}
-          />
+        </View>
+        <View style={styles.brandRow}>
+          <Text style={styles.brandName} numberOfLines={1}>{item.brandName || '-'}</Text>
+          <View style={styles.typeBadge}>
+            <Text style={styles.typeBadgeText} numberOfLines={1}>{typeName}</Text>
+          </View>
         </View>
         <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Internet ID</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{item.internetId || 'N/A'}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Address</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{item.address || 'N/A'}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Contact</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{contact || 'N/A'}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Type</Text>
+          <Text style={styles.infoLabel}>Purchase Price</Text>
           <Text style={styles.infoValue} numberOfLines={1}>
-            {TYPE_LABELS[item.connectionType || ''] || item.connectionType || '-'}
+            PKR {(item.purchasePrice || 0).toLocaleString()}
           </Text>
         </View>
         <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Install Date</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{item.installationDate || 'N/A'}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Cable / Internet</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{cableInternet || '-'}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Status</Text>
-          <Text
-            style={[
-              styles.infoValue,
-              {color: STATUS_COLORS[item.status] || '#6B7280', textTransform: 'capitalize'},
-            ]}>
-            {item.status}
+          <Text style={styles.infoLabel}>Sale Price</Text>
+          <Text style={styles.infoValue} numberOfLines={1}>
+            PKR {((item.salePrice ?? item.price) || 0).toLocaleString()}
           </Text>
         </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>SN / MAC</Text>
+          <Text style={styles.infoValue} numberOfLines={1}>{item.serialNumber || '-'}</Text>
+        </View>
+        {(item.discount || 0) > 0 ? (
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Discount</Text>
+            <Text style={styles.infoValue} numberOfLines={1}>
+              PKR {(item.discount || 0).toLocaleString()}
+            </Text>
+          </View>
+        ) : null}
         <View style={styles.cardFooter}>
           <View style={styles.cardActions}>
             <TouchableOpacity style={styles.editBtn} onPress={() => openEdit(item)}>
@@ -487,7 +464,7 @@ export default function InquiriesScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.deleteBtn}
-              onPress={() => handleDelete(item.id, item.name)}>
+              onPress={() => handleDelete(item)}>
               <Text style={styles.deleteBtnText}>Delete</Text>
             </TouchableOpacity>
           </View>
@@ -504,16 +481,7 @@ export default function InquiriesScreen() {
     );
   }
 
-  const filterTrigger = (label: string, current: string, onPress: () => void) => (
-    <TouchableOpacity style={styles.filterTrigger} onPress={onPress}>
-      <Text style={styles.filterTriggerLabel} numberOfLines={1}>
-        {label}: {current}
-      </Text>
-      <ChevronDown size={14} color="#6B7280" />
-    </TouchableOpacity>
-  );
-
-  const formRow = (label: string, value: any, onChangeText: (t: string) => void, placeholder = '', keyboardType?: 'default' | 'phone-pad' | 'numeric') => (
+  const formRow = (label: string, value: any, onChangeText: (t: string) => void, placeholder = '', keyboardType?: 'default' | 'numeric' | 'phone-pad') => (
     <View style={styles.formGroup}>
       <Text style={styles.formLabel}>{label}</Text>
       <TextInput
@@ -527,26 +495,19 @@ export default function InquiriesScreen() {
     </View>
   );
 
-  const formArea = (label: string, value: any, onChangeText: (t: string) => void, placeholder = '') => (
+  const selectField = (
+    label: string,
+    display: string,
+    placeholder: string,
+    onPress: () => void,
+  ) => (
     <View style={styles.formGroup}>
       <Text style={styles.formLabel}>{label}</Text>
-      <TextInput
-        style={[styles.formInput, styles.formTextarea]}
-        value={String(value ?? '')}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor="#9CA3AF"
-        multiline
-      />
-    </View>
-  );
-
-  const formSelect = (label: string, key: 'subLocality' | 'boxNumber' | 'packageCable', placeholder: string) => (
-    <View style={styles.formGroup}>
-      <Text style={styles.formLabel}>{label}</Text>
-      <TouchableOpacity style={styles.formSelect} onPress={() => openSelectSheet(key)}>
-        <Text style={selectLabel(key) ? styles.formSelectValue : styles.formSelectPlaceholder} numberOfLines={1}>
-          {selectLabel(key) || placeholder}
+      <TouchableOpacity style={styles.formSelect} onPress={onPress}>
+        <Text
+          style={display ? styles.formSelectValue : styles.formSelectPlaceholder}
+          numberOfLines={1}>
+          {display || placeholder}
         </Text>
         <ChevronDown size={16} color="#6B7280" />
       </TouchableOpacity>
@@ -584,7 +545,7 @@ export default function InquiriesScreen() {
           <DoorMenuIcon open={drawerStatus === 'open'} />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle}>New Inquiries</Text>
+          <Text style={styles.headerTitle}>Products</Text>
           <Text style={styles.headerCount}>{filtered.length} total</Text>
         </View>
       </GradientView>
@@ -601,16 +562,16 @@ export default function InquiriesScreen() {
           <View>
             {/* Hero Header */}
             <View style={styles.heroHeader}>
-              <GradientView colors={['#10B981', '#7C3AED']} style={styles.heroIconBox}>
-                <UserPlus size={20} color="#FFFFFF" />
+              <GradientView colors={['#10B981', '#16A34A']} style={styles.heroIconBox}>
+                <PackageOpen size={20} color="#FFFFFF" />
               </GradientView>
               <View style={styles.heroInfo}>
-                <Text style={styles.heroTitle}>New Inquiries</Text>
-                <Text style={styles.heroSubtitle}>Manage leads and potential new subscribers.</Text>
+                <Text style={styles.heroTitle}>Products</Text>
+                <Text style={styles.heroSubtitle}>Manage your inventory of products and services.</Text>
               </View>
             </View>
 
-            <InquiryDivider />
+            <ProductsDivider />
 
             {/* Stat cards */}
             <ScrollView
@@ -630,68 +591,40 @@ export default function InquiriesScreen() {
               ))}
             </ScrollView>
 
-            {/* Filters */}
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.filterRow}>
-              {filterTrigger('Sublocality', filterArea === 'all' ? 'All' : filterArea, () =>
-                openFilterSheet('area', 'Sublocality', areaOptions, filterArea),
-              )}
-              {filterTrigger('Type', filterType === 'all' ? 'All' : TYPE_LABELS[filterType] || filterType, () =>
-                openFilterSheet('type', 'Type', typeOptions, filterType),
-              )}
-              {filterTrigger('Month', filterMonth === 'all' ? 'All' : MONTHS.find(m => m.value === filterMonth)?.label || filterMonth, () =>
-                openFilterSheet('month', 'Month', monthOptions, filterMonth),
-              )}
-            </ScrollView>
-
-            {/* Search + Actions */}
+            {/* Search + SN Pool + Add */}
             <View style={styles.toolbar}>
               <View style={styles.searchBox}>
                 <Search size={16} color="#6B7280" />
                 <TextInput
                   style={styles.searchInput}
-                  placeholder="Search inquiries..."
+                  placeholder="Filter by name, category, or brand..."
                   placeholderTextColor="#9CA3AF"
                   value={search}
                   onChangeText={setSearch}
                 />
               </View>
-              <View style={styles.toolbarActions}>
-                <TouchableOpacity
-                  style={styles.secondaryBtn}
-                  onPress={() => Alert.alert('Coming Soon', 'Pending Referrals will be available soon.')}>
-                  <Send size={14} color="#4B5563" />
-                  <Text style={styles.secondaryBtnText}>Pending Referrals</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.secondaryBtn}
-                  onPress={() => Alert.alert('Coming Soon', 'Send Promotions will be available soon.')}>
-                  <Users size={14} color="#4B5563" />
-                  <Text style={styles.secondaryBtnText}>Send Promotions</Text>
-                </TouchableOpacity>
-                <GradientButton
-                  colors={['#10B981', '#16A34A']}
-                  style={styles.addBtn}
-                  onPress={openAdd}>
-                  <PlusCircle size={16} color="#FFFFFF" />
-                  <Text style={styles.addBtnText} numberOfLines={1}>
-                    Add Inquiry
-                  </Text>
-                </GradientButton>
-              </View>
+              <TouchableOpacity style={styles.poolBtn} onPress={openSnPool}>
+                <Layers size={15} color="#7C3AED" />
+                <Text style={styles.poolBtnText}>Pool</Text>
+              </TouchableOpacity>
+              <GradientButton
+                colors={['#10B981', '#16A34A']}
+                style={styles.addBtn}
+                onPress={openAdd}>
+                <PlusCircle size={16} color="#FFFFFF" />
+                <Text style={styles.addBtnText} numberOfLines={1}>
+                  Add
+                </Text>
+              </GradientButton>
             </View>
           </View>
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>📋</Text>
-            <Text style={styles.emptyTitle}>No inquiries found</Text>
+            <Text style={styles.emptyIcon}>📦</Text>
+            <Text style={styles.emptyTitle}>No products found</Text>
             <Text style={styles.emptyText}>
-              {search || filterArea !== 'all' || filterType !== 'all' || filterMonth !== 'all'
-                ? 'Try adjusting your filters'
-                : 'Add your first inquiry'}
+              {search ? 'Try adjusting your search' : 'Add your first product'}
             </Text>
           </View>
         }
@@ -699,7 +632,7 @@ export default function InquiriesScreen() {
           <View style={styles.pagination}>
             <Text style={styles.paginationInfo}>
               Showing {filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} to{' '}
-              {Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} inquiries
+              {Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} products
             </Text>
 
             <View style={styles.pageControls}>
@@ -834,39 +767,7 @@ export default function InquiriesScreen() {
         </View>
       </Modal>
 
-      {/* Filter sheet */}
-      <Modal
-        visible={!!filterSheet}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setFilterSheet(null)}>
-        <View style={styles.sheetOverlay}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>{filterSheet?.title}</Text>
-              <TouchableOpacity onPress={() => setFilterSheet(null)}>
-                <Text style={styles.sheetClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            {filterSheet?.options.map(option => {
-              const active = option.value === filterSheet.selected;
-              return (
-                <TouchableOpacity
-                  key={option.value}
-                  style={styles.sheetOption}
-                  onPress={() => onFilterSelect(option.value)}>
-                  <Text style={[styles.sheetOptionText, active && styles.sheetOptionTextActive]}>
-                    {option.label}
-                  </Text>
-                  {active ? <Check size={16} color="#10B981" /> : null}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-      </Modal>
-
-      {/* Add/Edit Inquiry form */}
+      {/* Add/Edit Product form */}
       <Modal
         visible={formOpen}
         transparent
@@ -878,62 +779,66 @@ export default function InquiriesScreen() {
           <View style={styles.formSheet}>
             <View style={styles.formSheetHeader}>
               <View style={styles.formSheetTitleRow}>
-                <GradientView colors={['#10B981', '#7C3AED']} style={styles.formSheetIcon}>
-                  <UserPlus size={16} color="#FFFFFF" />
+                <GradientView colors={['#10B981', '#16A34A']} style={styles.formSheetIcon}>
+                  <PackageOpen size={16} color="#FFFFFF" />
                 </GradientView>
-                <Text style={styles.formSheetTitle}>{editing ? 'Edit' : 'Add'} Inquiry</Text>
+                <Text style={styles.formSheetTitle}>{editing ? 'Edit' : 'Add'} Product</Text>
               </View>
               <TouchableOpacity onPress={() => setFormOpen(false)}>
                 <Text style={styles.sheetClose}>✕</Text>
               </TouchableOpacity>
             </View>
             <ScrollView contentContainerStyle={styles.formBody} keyboardShouldPersistTaps="handled">
-              {formRow('Name *', form.name, t => setField('name', t), 'e.g. Jane Doe')}
-              {formRow('Internet ID', form.internetId, t => setField('internetId', t), 'Internet ID')}
-              <View style={styles.formRow2}>
-                <View style={styles.formGroupHalf}>
-                  <Text style={styles.formLabel}>Cell</Text>
+              {formRow('Product Barcode', form.barcode, t => setField('barcode', t), 'e.g., 8901234567890')}
+              {formRow('Product Name *', form.name, t => setField('name', t), 'e.g., TP-Link Router')}
+              {selectField(
+                'Brand',
+                form.brandName || '',
+                'Search brand...',
+                () => openSelectSheet('brandId'),
+              )}
+              {selectField(
+                'Product Type',
+                form.productTypeName || '',
+                'Search product type...',
+                () => openSelectSheet('productTypeId'),
+              )}
+              {unitTypes.length > 0 ? (
+                selectField(
+                  'Unit Type',
+                  form.unitType || '',
+                  'Search unit type...',
+                  () => openSelectSheet('unitType'),
+                )
+              ) : (
+                chipRow('Unit Type', [
+                  {label: 'Per Piece', value: 'piece'},
+                  {label: 'Per Meter', value: 'meter'},
+                ], form.unitType || 'piece', v => setField('unitType', v))
+              )}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>
+                  SN / MAC{!editing ? '  (auto from pool)' : ''}
+                </Text>
+                <View style={styles.formInputWrap}>
                   <TextInput
                     style={styles.formInput}
-                    value={String(form.cell ?? '')}
-                    onChangeText={t => setField('cell', t)}
-                    placeholder="e.g. 0300-1234567"
+                    value={String(form.serialNumber ?? '')}
+                    onChangeText={t => setField('serialNumber', t)}
+                    placeholder="e.g., 00:1A:2B:3C:4D:5E"
                     placeholderTextColor="#9CA3AF"
-                    keyboardType="phone-pad"
+                    editable={!fetchingNextSn}
                   />
-                </View>
-                <View style={styles.formGroupHalf}>
-                  <Text style={styles.formLabel}>Mobile</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={String(form.mobile ?? '')}
-                    onChangeText={t => setField('mobile', t)}
-                    placeholder="e.g. 0301-1234567"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="phone-pad"
-                  />
+                  {fetchingNextSn ? (
+                    <ActivityIndicator size="small" color="#10B981" style={styles.inputSpinner} />
+                  ) : null}
                 </View>
               </View>
-              {formArea('Address *', form.address, t => setField('address', t), 'Full address of potential customer')}
               <View style={styles.formRow2}>
-                {formGroupNumber('Installation Amount', form.installationAmount, v => setField('installationAmount', v))}
-                {formGroupNumber('Other Amount', form.otherAmount, v => setField('otherAmount', v))}
+                {formRow('Purchase Price (PKR)', form.purchasePrice, t => setField('purchasePrice', t), '0', 'numeric')}
+                {formRow('Sale Price (PKR)', form.salePrice, t => setField('salePrice', t), '0', 'numeric')}
               </View>
-              <View style={styles.formRow2}>
-                {formRow('Installation Date', form.installationDate, t => setField('installationDate', t), 'YYYY-MM-DD')}
-                {formRow('Recharge Date', form.rechargeDate, t => setField('rechargeDate', t), 'YYYY-MM-DD')}
-              </View>
-              {formSelect('Sublocality', 'subLocality', 'Select sublocality')}
-              {chipRow('Connection Type', typeOptions.filter(o => o.value !== 'all'), form.connectionType || '', v => setField('connectionType', v))}
-              {formSelect('Box Number', 'boxNumber', 'Select box')}
-              {formSelect('Package Cable', 'packageCable', 'Select package')}
-              <View style={styles.formRow2}>
-                {formGroupNumber('Discount', form.discount, v => setField('discount', v))}
-                {formGroupNumber('Amount', form.amount, v => setField('amount', v))}
-              </View>
-              {formArea('Comments', form.comments, t => setField('comments', t), 'Enter comments...')}
-              {chipRow('Status', statusOptions, form.status || 'new', v => setField('status', v))}
-              {formArea('Notes', form.notes, t => setField('notes', t), 'Enter notes...')}
+              {formRow('Discount (PKR)', form.discount, t => setField('discount', t), '0', 'numeric')}
               <View style={styles.formActions}>
                 <TouchableOpacity
                   style={styles.cancelBtn}
@@ -949,7 +854,7 @@ export default function InquiriesScreen() {
                   {saving ? (
                     <ActivityIndicator color="#FFFFFF" size="small" />
                   ) : (
-                    <Text style={styles.saveBtnText}>{editing ? 'Update' : 'Add'}</Text>
+                    <Text style={styles.saveBtnText}>{editing ? 'Update' : 'Save Product'}</Text>
                   )}
                 </GradientButton>
               </View>
@@ -958,7 +863,7 @@ export default function InquiriesScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Form select sheet */}
+      {/* Brand / Product Type / Unit Type select sheet */}
       <Modal
         visible={!!selectSheet}
         transparent
@@ -972,46 +877,133 @@ export default function InquiriesScreen() {
                 <Text style={styles.sheetClose}>✕</Text>
               </TouchableOpacity>
             </View>
-            {selectSheet?.options.map(option => {
-              const active = option.value === selectLabel(selectSheet.key);
-              return (
-                <TouchableOpacity
-                  key={option.value}
-                  style={styles.sheetOption}
-                  onPress={() => onSelectSheetPick(option.value)}>
-                  <Text style={[styles.sheetOptionText, active && styles.sheetOptionTextActive]} numberOfLines={1}>
-                    {option.label}
-                  </Text>
-                  {active ? <Check size={16} color="#10B981" /> : null}
-                </TouchableOpacity>
-              );
-            })}
+            <ScrollView style={styles.sheetScroll}>
+              {selectSheet?.options.map(option => {
+                const active =
+                  (selectSheet.key === 'brandId' && option.value === form.brandId) ||
+                  (selectSheet.key === 'productTypeId' && option.value === form.productTypeId) ||
+                  (selectSheet.key === 'unitType' && option.value === form.unitType);
+                return (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={styles.sheetOption}
+                    onPress={() => onSelectSheetPick(option.value)}>
+                    <Text style={[styles.sheetOptionText, active && styles.sheetOptionTextActive]} numberOfLines={1}>
+                      {option.label}
+                    </Text>
+                    {active ? <Check size={16} color="#10B981" /> : null}
+                  </TouchableOpacity>
+                );
+              })}
+              {selectSheet && selectSheet.options.length === 0 ? (
+                <View style={styles.sheetEmpty}>
+                  <Text style={styles.sheetEmptyText}>No options available</Text>
+                </View>
+              ) : null}
+            </ScrollView>
           </View>
         </View>
       </Modal>
-    </View>
-  );
-}
 
-const statusOptions: FilterOption[] = [
-  {label: 'New', value: 'new'},
-  {label: 'Follow-up', value: 'follow-up'},
-  {label: 'Converted', value: 'converted'},
-  {label: 'Closed', value: 'closed'},
-];
+      {/* SN Number Pool modal */}
+      <Modal
+        visible={snPoolOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setSnPoolOpen(false)}>
+        <View style={styles.formOverlay}>
+          <View style={styles.poolSheet}>
+            <View style={styles.formSheetHeader}>
+              <View style={styles.formSheetTitleRow}>
+                <GradientView colors={['#A855F7', '#7C3AED']} style={styles.formSheetIcon}>
+                  <Layers size={16} color="#FFFFFF" />
+                </GradientView>
+                <Text style={styles.formSheetTitle}>SN Number Pool</Text>
+              </View>
+              <TouchableOpacity onPress={() => setSnPoolOpen(false)}>
+                <Text style={styles.sheetClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={styles.formBody} keyboardShouldPersistTaps="handled">
+              <Text style={styles.poolDescription}>
+                Add many serial numbers at once. Separate each one with a space, dash (-), comma, or new line.
+                When a new product is added with an empty SN field, the next available number is assigned automatically.
+              </Text>
 
-function formGroupNumber(label: string, value: any, onChange: (v: number) => void) {
-  return (
-    <View style={styles.formGroupHalf}>
-      <Text style={styles.formLabel}>{label}</Text>
-      <TextInput
-        style={styles.formInput}
-        value={String(value ?? '')}
-        onChangeText={t => onChange(parseFloat(t) || 0)}
-        placeholder="0"
-        placeholderTextColor="#9CA3AF"
-        keyboardType="numeric"
-      />
+              <View style={styles.poolStatsRow}>
+                <Text style={styles.poolStatsText}>
+                  Available: <Text style={styles.poolStatsStrong}>{availableCount}</Text> / {poolEntries.length} total
+                </Text>
+                {uniqueCount > 0 ? (
+                  <Text style={styles.poolStatsText}>
+                    Parsed: <Text style={styles.poolStatsStrong}>{uniqueCount}</Text> unique
+                  </Text>
+                ) : null}
+              </View>
+
+              <TextInput
+                style={styles.poolTextarea}
+                placeholder={'e.g., SN-1001 SN-1002 SN-1003\nSN1004-SN1005, SN1006'}
+                placeholderTextColor="#9CA3AF"
+                multiline
+                textAlignVertical="top"
+                value={poolRaw}
+                onChangeText={setPoolRaw}
+              />
+
+              <GradientButton
+                colors={['#A855F7', '#7C3AED']}
+                style={styles.poolAddBtn}
+                onPress={handleAddPoolNumbers}
+                disabled={poolSaving || uniqueCount === 0}>
+                {poolSaving ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.saveBtnText}>
+                    Add {uniqueCount || ''} Serial Number{uniqueCount === 1 ? '' : 's'}
+                  </Text>
+                )}
+              </GradientButton>
+
+              <View style={styles.poolListHeader}>
+                <Text style={styles.poolListHeaderText}>Serial Number</Text>
+                <Text style={styles.poolListHeaderText}>Status</Text>
+                <Text style={styles.poolListHeaderText}>Action</Text>
+              </View>
+              {poolLoading ? (
+                <View style={styles.poolEmpty}>
+                  <ActivityIndicator size="small" color="#A855F7" />
+                </View>
+              ) : poolEntries.length === 0 ? (
+                <View style={styles.poolEmpty}>
+                  <Text style={styles.sheetEmptyText}>No serial numbers in the pool yet.</Text>
+                </View>
+              ) : (
+                poolEntries.map(entry => {
+                  const isAvailable = entry.status === 'available';
+                  return (
+                    <View key={entry.id} style={styles.poolEntryRow}>
+                      <Text style={styles.poolEntrySerial} numberOfLines={1}>
+                        {entry.serialNumber}
+                      </Text>
+                      <View style={[styles.poolBadge, isAvailable ? styles.poolBadgeAvailable : styles.poolBadgeUsed]}>
+                        <Text style={[styles.poolBadgeText, isAvailable ? styles.poolBadgeTextAvailable : styles.poolBadgeTextUsed]}>
+                          {isAvailable ? 'Available' : 'Used'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.poolDeleteBtn}
+                        onPress={() => handleDeletePoolEntry(entry)}>
+                        <Trash2 size={16} color="#EF4444" />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1088,7 +1080,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginRight: 10,
-    minWidth: 150,
+    minWidth: 170,
   },
   statIcon: {
     width: 38,
@@ -1104,34 +1096,15 @@ const styles = StyleSheet.create({
   },
   statLabel: {fontSize: 11, color: '#6B7280', fontWeight: '500'},
   statValue: {fontSize: 20, fontWeight: '700', color: '#111827'},
-  filterRow: {
+  toolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 14,
     gap: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
   },
-  filterTrigger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    marginRight: 8,
-  },
-  filterTriggerLabel: {
-    fontSize: 12,
-    color: '#374151',
-    fontWeight: '500',
-    marginRight: 6,
-    flexShrink: 1,
-    textTransform: 'capitalize',
-  },
-  toolbar: {paddingHorizontal: 16, paddingTop: 14, rowGap: 8, columnGap: 8},
   searchBox: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
@@ -1141,26 +1114,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   searchInput: {flex: 1, paddingVertical: 10, fontSize: 14, color: '#111827', marginLeft: 8},
-  toolbarActions: {
+  poolBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
-    rowGap: 8,
-    columnGap: 8,
-  },
-  secondaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
     borderRadius: 10,
-    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#C4B5FD',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
     paddingVertical: 10,
     flexShrink: 0,
   },
-  secondaryBtnText: {fontSize: 12, color: '#4B5563', fontWeight: '600', marginLeft: 6},
+  poolBtnText: {color: '#7C3AED', fontSize: 12, fontWeight: '600', marginLeft: 5},
   addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1185,10 +1150,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#10B981',
     marginRight: 10,
+    maxWidth: 110,
+    fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}),
   },
   cardInfo: {flex: 1},
   cardName: {fontSize: 15, fontWeight: '600', color: '#111827'},
-  statusDot: {width: 10, height: 10, borderRadius: 5},
+  brandRow: {flexDirection: 'row', alignItems: 'center', marginBottom: 6},
+  brandName: {flex: 1, fontSize: 12, color: '#6B7280', marginRight: 8},
+  typeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: '#D1FAE5',
+  },
+  typeBadgeText: {fontSize: 11, fontWeight: '600', color: '#047857'},
   infoRow: {flexDirection: 'row', paddingVertical: 5},
   infoLabel: {fontSize: 12, color: '#9CA3AF', width: 110},
   infoValue: {flex: 1, fontSize: 13, color: '#374151', fontWeight: '500'},
@@ -1199,9 +1174,9 @@ const styles = StyleSheet.create({
   cardActions: {flexDirection: 'row', gap: 8},
   editBtn: {
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 6,
-    backgroundColor: '#ECFDF5',
+    backgroundColor: '#D1FAE5',
   },
-  editBtnText: {fontSize: 12, fontWeight: '500', color: '#10B981'},
+  editBtnText: {fontSize: 12, fontWeight: '500', color: '#047857'},
   deleteBtn: {
     paddingHorizontal: 12, paddingVertical: 5, borderRadius: 6,
     backgroundColor: '#FEF2F2',
@@ -1301,6 +1276,7 @@ const styles = StyleSheet.create({
   },
   sheetTitle: {fontSize: 16, fontWeight: '600', color: '#111827'},
   sheetClose: {fontSize: 16, color: '#6B7280', padding: 4},
+  sheetScroll: {paddingBottom: 20},
   sheetOption: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1312,6 +1288,8 @@ const styles = StyleSheet.create({
   },
   sheetOptionText: {fontSize: 15, color: '#374151', fontWeight: '500', flex: 1, marginRight: 8},
   sheetOptionTextActive: {color: '#10B981', fontWeight: '600'},
+  sheetEmpty: {paddingVertical: 30, alignItems: 'center'},
+  sheetEmptyText: {fontSize: 13, color: '#9CA3AF'},
   formOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -1322,6 +1300,12 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     maxHeight: '92%',
+  },
+  poolSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '88%',
   },
   formSheetHeader: {
     flexDirection: 'row',
@@ -1345,13 +1329,13 @@ const styles = StyleSheet.create({
   formBody: {paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40},
   formGroup: {marginBottom: 14},
   formRow2: {flexDirection: 'row', gap: 12, alignItems: 'flex-start'},
-  formGroupHalf: {flex: 1, marginBottom: 14},
   formLabel: {fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 6},
   formInput: {
     backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB',
     paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, color: '#111827',
   },
-  formTextarea: {minHeight: 70, textAlignVertical: 'top'},
+  formInputWrap: {position: 'relative', justifyContent: 'center'},
+  inputSpinner: {position: 'absolute', right: 12},
   formSelect: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1363,8 +1347,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  formSelectValue: {fontSize: 15, color: '#111827', flex: 1, marginRight: 8},
-  formSelectPlaceholder: {fontSize: 15, color: '#9CA3AF', flex: 1, marginRight: 8},
+  formSelectValue: {flex: 1, fontSize: 15, color: '#111827', marginRight: 8},
+  formSelectPlaceholder: {flex: 1, fontSize: 15, color: '#9CA3AF', marginRight: 8},
   chipRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 8},
   chip: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
@@ -1394,4 +1378,56 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   saveBtnText: {color: '#FFFFFF', fontSize: 14, fontWeight: '600'},
+  poolDescription: {fontSize: 12, color: '#6B7280', marginBottom: 12},
+  poolStatsRow: {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10},
+  poolStatsText: {fontSize: 12, color: '#6B7280'},
+  poolStatsStrong: {color: '#111827', fontWeight: '700'},
+  poolTextarea: {
+    backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB',
+    paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: '#111827',
+    minHeight: 100, marginBottom: 12,
+    fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}),
+  },
+  poolAddBtn: {
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  poolListHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  poolListHeaderText: {flex: 1, fontSize: 12, fontWeight: '600', color: '#6B7280'},
+  poolEmpty: {paddingVertical: 24, alignItems: 'center'},
+  poolEntryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  poolEntrySerial: {
+    flex: 1,
+    fontSize: 13,
+    color: '#374151',
+    fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}),
+  },
+  poolBadge: {paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8, marginRight: 8},
+  poolBadgeAvailable: {backgroundColor: '#D1FAE5'},
+  poolBadgeUsed: {backgroundColor: '#F3F4F6'},
+  poolBadgeText: {fontSize: 11, fontWeight: '600'},
+  poolBadgeTextAvailable: {color: '#047857'},
+  poolBadgeTextUsed: {color: '#6B7280'},
+  poolDeleteBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });

@@ -16,6 +16,16 @@ const MANUAL_BASE_URL = '';
 
 type RetryableConfig = InternalAxiosRequestConfig & {_hostRetried?: boolean};
 
+export type UnauthorizedHandler = () => void;
+
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+// Registered by the AuthProvider so a 401 response can reset the in-memory
+// auth state (not just AsyncStorage) and redirect the user to the login flow.
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
+  unauthorizedHandler = handler;
+}
+
 // The JS bundle is always served by Metro on the dev machine, so the bundle
 // URL's host is the most reliable first guess for where the API lives.
 //  - Physical device over USB with adb reverse: host resolves to localhost
@@ -230,6 +240,7 @@ apiClient.interceptors.response.use(
       await AsyncStorage.removeItem('auth_token');
       await AsyncStorage.removeItem('company_id');
       await AsyncStorage.removeItem('user_data');
+      unauthorizedHandler?.();
       return Promise.reject(error);
     }
 

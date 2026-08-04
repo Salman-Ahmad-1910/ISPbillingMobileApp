@@ -3,54 +3,59 @@ import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
   Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import {createSubscriber, updateSubscriber} from '../../api/subscribers';
-import {Subscriber} from '../../types';
+import {createConnection, updateConnection} from '../../api/connections';
+import {Connection} from '../../types';
+import AnimatedBackArrow from '../../components/AnimatedBackArrow';
+import {GradientButton} from '../../components/GradientButton';
 
 export default function SubscriberFormScreen({route, navigation}: any) {
-  const existing: Subscriber | null = route.params?.subscriber || null;
+  const existing: Connection | null = route.params?.connection || null;
   const isEdit = !!existing;
 
+  const [internetId, setInternetId] = useState(existing?.internetId || '');
   const [name, setName] = useState(existing?.name || '');
-  const [identity, setIdentity] = useState(existing?.subscriber_identity || '');
+  const [address, setAddress] = useState(existing?.address || '');
+  const [cell, setCell] = useState(existing?.cell || '');
+  const [mobile, setMobile] = useState(existing?.mobile || '');
   const [cnic, setCnic] = useState(existing?.cnic || '');
-  const [phone, setPhone] = useState(existing?.phone || '');
-  const [address, setAddress] = useState(existing?.installationAddress || '');
-  const [billingCycle, setBillingCycle] = useState(existing?.billingCycle || 'monthly');
+  const [connectionType, setConnectionType] = useState(existing?.connectionType || 'both');
   const [status, setStatus] = useState(existing?.status || 'active');
-  const [balance, setBalance] = useState(existing?.balance?.toString() || '0');
-  const [connectionDate, setConnectionDate] = useState(existing?.connectionDate || '');
+  const [boxNumber, setBoxNumber] = useState(existing?.boxNumber || '');
+  const [packageCable, setPackageCable] = useState(existing?.packageCable || '');
+  const [packageInternet, setPackageInternet] = useState(existing?.packageInternet || '');
+  const [connectionProvider, setConnectionProvider] = useState(existing?.connectionProvider || '');
+  const [installationDate, setInstallationDate] = useState(existing?.installationDate || '');
+  const [amount, setAmount] = useState(existing?.amount?.toString() || '0');
   const [loading, setLoading] = useState(false);
 
   const handleSave = async () => {
+    if (!internetId.trim()) {Alert.alert('Error', 'Subscriber ID is required'); return;}
     if (!name.trim()) {Alert.alert('Error', 'Name is required'); return;}
-    if (!identity.trim()) {Alert.alert('Error', 'Subscriber ID is required'); return;}
-    if (!cnic.trim()) {Alert.alert('Error', 'CNIC is required'); return;}
-    if (!phone.trim()) {Alert.alert('Error', 'Phone is required'); return;}
-    if (!address.trim()) {Alert.alert('Error', 'Address is required'); return;}
+
+    const payload: Partial<Connection> = {
+      internetId: internetId.trim(),
+      name: name.trim(),
+      address: address.trim(),
+      cell: cell.trim(),
+      mobile: mobile.trim(),
+      cnic: cnic.trim(),
+      connectionType,
+      status,
+      boxNumber: boxNumber.trim(),
+      packageCable: packageCable.trim(),
+      packageInternet: packageInternet.trim(),
+      connectionProvider: connectionProvider.trim(),
+      installationDate: installationDate.trim(),
+      amount: parseFloat(amount) || 0,
+    };
 
     setLoading(true);
     try {
-      const payload: Partial<Subscriber> = {
-        name: name.trim(),
-        subscriber_identity: identity.trim(),
-        cnic: cnic.trim(),
-        phone: phone.trim(),
-        installationAddress: address.trim(),
-        billingCycle,
-        status,
-        balance: parseFloat(balance) || 0,
-        connectionDate: connectionDate.trim() || undefined,
-        packageId: existing?.packageId || '',
-        areaId: existing?.areaId || '',
-        splitterId: existing?.splitterId || '',
-        splitterPort: existing?.splitterPort || 0,
-      };
-
       if (isEdit) {
-        await updateSubscriber(existing!.id, payload);
+        await updateConnection(existing!.id, payload);
         Alert.alert('Success', 'Subscriber updated');
       } else {
-        await createSubscriber(payload);
+        await createConnection(payload);
         Alert.alert('Success', 'Subscriber created');
       }
       navigation.goBack();
@@ -62,39 +67,43 @@ export default function SubscriberFormScreen({route, navigation}: any) {
     }
   };
 
-  const cycles = ['monthly', 'quarterly', 'yearly'];
-  const statuses = ['active', 'suspended', 'inactive', 'deactivated'];
+  const types = ['both', 'internet', 'tv_cable'];
+  const typeLabels: Record<string, string> = {both: 'Both', internet: 'Internet', tv_cable: 'TV Cable'};
+  const statuses = ['active', 'inactive', 'suspended', 'deactivated'];
 
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
+        <View style={[styles.headerAccent, {backgroundColor: '#4F46E5'}]} />
+        <AnimatedBackArrow onPress={() => navigation.goBack()} color="#4F46E5" />
         <Text style={styles.headerTitle}>{isEdit ? 'Edit Subscriber' : 'New Subscriber'}</Text>
-        <View style={styles.spacer} />
       </View>
 
       <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+        <Field label="Internet ID *" value={internetId} onChangeText={setInternetId} placeholder="e.g. INT-0001" />
         <Field label="Name *" value={name} onChangeText={setName} placeholder="Full name" />
-        <Field label="Subscriber ID *" value={identity} onChangeText={setIdentity} placeholder="e.g. SUB001" />
-        <Field label="CNIC *" value={cnic} onChangeText={setCnic} placeholder="e.g. 1234567890123" />
-        <Field label="Phone *" value={phone} onChangeText={setPhone} placeholder="+92..." keyboardType="phone-pad" />
-        <Field label="Address *" value={address} onChangeText={setAddress} placeholder="Installation address" multiline />
-        <Field label="Connection Date" value={connectionDate} onChangeText={setConnectionDate} placeholder="YYYY-MM-DD" />
-        <Field label="Balance" value={balance} onChangeText={setBalance} placeholder="0" keyboardType="numeric" />
+        <Field label="Address" value={address} onChangeText={setAddress} placeholder="Installation address" multiline />
+        <Field label="Cell" value={cell} onChangeText={setCell} placeholder="Cell number" keyboardType="phone-pad" />
+        <Field label="Mobile" value={mobile} onChangeText={setMobile} placeholder="Mobile number" keyboardType="phone-pad" />
+        <Field label="CNIC" value={cnic} onChangeText={setCnic} placeholder="e.g. 1234567890123" />
+        <Field label="Box Number" value={boxNumber} onChangeText={setBoxNumber} placeholder="e.g. BX-001" />
+        <Field label="Cable Package" value={packageCable} onChangeText={setPackageCable} placeholder="e.g. Basic HD" />
+        <Field label="Internet Package" value={packageInternet} onChangeText={setPackageInternet} placeholder="e.g. 10 Mbps" />
+        <Field label="Connection Provider" value={connectionProvider} onChangeText={setConnectionProvider} placeholder="e.g. Fintrack" />
+        <Field label="Install Date" value={installationDate} onChangeText={setInstallationDate} placeholder="YYYY-MM-DD" />
+        <Field label="Amount" value={amount} onChangeText={setAmount} placeholder="0" keyboardType="numeric" />
 
-        <Text style={styles.label}>Billing Cycle</Text>
+        <Text style={styles.label}>Connection Type</Text>
         <View style={styles.chipRow}>
-          {cycles.map(c => (
+          {types.map(t => (
             <TouchableOpacity
-              key={c}
-              style={[styles.chip, billingCycle === c && styles.chipActive]}
-              onPress={() => setBillingCycle(c)}>
-              <Text style={[styles.chipText, billingCycle === c && styles.chipTextActive]}>
-                {c.charAt(0).toUpperCase() + c.slice(1)}
+              key={t}
+              style={[styles.chip, connectionType === t && styles.chipActive]}
+              onPress={() => setConnectionType(t)}>
+              <Text style={[styles.chipText, connectionType === t && styles.chipTextActive]}>
+                {typeLabels[t]}
               </Text>
             </TouchableOpacity>
           ))}
@@ -114,8 +123,9 @@ export default function SubscriberFormScreen({route, navigation}: any) {
           ))}
         </View>
 
-        <TouchableOpacity
-          style={[styles.saveBtn, loading && styles.saveBtnDisabled]}
+        <GradientButton
+          colors={['#166534', '#22c55e']}
+          style={styles.saveBtn}
           onPress={handleSave}
           disabled={loading}>
           {loading ? (
@@ -123,7 +133,7 @@ export default function SubscriberFormScreen({route, navigation}: any) {
           ) : (
             <Text style={styles.saveBtnText}>{isEdit ? 'Update' : 'Create'}</Text>
           )}
-        </TouchableOpacity>
+        </GradientButton>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -162,14 +172,18 @@ const fieldStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: '#F3F4F6'},
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingTop: 56, paddingHorizontal: 20, paddingBottom: 12,
-    backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E5E7EB',
+    flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start',
+    marginTop: 50, marginLeft: 16, paddingVertical: 8, paddingHorizontal: 8,
+    backgroundColor: '#FFFFFF', borderRadius: 16,
+    borderWidth: 1, borderColor: 'rgba(0, 0, 0, 0.06)',
+    shadowColor: '#000', shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.12, shadowRadius: 10, elevation: 5,
   },
-  backBtn: {paddingVertical: 4},
-  backText: {fontSize: 16, color: '#4F46E5', fontWeight: '500'},
-  headerTitle: {fontSize: 18, fontWeight: '600', color: '#111827'},
-  spacer: {width: 60},
+  headerAccent: {
+    position: 'absolute', left: 0, top: 0, bottom: 0, width: 4,
+    borderTopLeftRadius: 16, borderBottomLeftRadius: 16,
+  },
+  headerTitle: {fontSize: 17, fontWeight: '700', color: '#111827', paddingRight: 8},
   form: {paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40},
   label: {fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 8, marginTop: 4},
   chipRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14},
@@ -181,9 +195,8 @@ const styles = StyleSheet.create({
   chipText: {fontSize: 13, color: '#6B7280', fontWeight: '500'},
   chipTextActive: {color: '#FFFFFF'},
   saveBtn: {
-    backgroundColor: '#4F46E5', borderRadius: 10, paddingVertical: 14,
+    borderRadius: 10, paddingVertical: 14,
     alignItems: 'center', marginTop: 10,
   },
-  saveBtnDisabled: {opacity: 0.6},
   saveBtnText: {color: '#FFFFFF', fontSize: 16, fontWeight: '600'},
 });
