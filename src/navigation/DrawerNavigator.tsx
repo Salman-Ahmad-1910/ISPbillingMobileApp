@@ -21,7 +21,23 @@ import GuarantorsScreen from '../screens/subscribers/GuarantorsScreen';
 import PackagesScreen from '../screens/subscribers/PackagesScreen';
 import ProductsScreen from '../screens/subscribers/ProductsScreen';
 import InstallmentPlansScreen from '../screens/subscribers/InstallmentPlansScreen';
+import SalesScreen from '../screens/subscribers/SalesScreen';
 import SalesCustomersScreen from '../screens/subscribers/SalesCustomersScreen';
+import PosScreen from '../screens/subscribers/PosScreen';
+import NewMessagesScreen from '../screens/subscribers/NewMessagesScreen';
+import DraftMessagesScreen from '../screens/subscribers/DraftMessagesScreen';
+import SentMessagesScreen from '../screens/subscribers/SentMessagesScreen';
+import ExpiryMessagesScreen from '../screens/subscribers/ExpiryMessagesScreen';
+import OtherMessagesScreen from '../screens/subscribers/OtherMessagesScreen';
+import WhatsAppDraftScreen from '../screens/subscribers/WhatsAppDraftScreen';
+import MyDealersScreen from '../screens/subscribers/MyDealersScreen';
+import SubscriberCollectionsScreen from '../screens/transaction/SubscriberCollectionsScreen';
+import DealersCollectionsScreen from '../screens/transaction/DealersCollectionsScreen';
+import AllocatedCollectionsScreen from '../screens/transaction/AllocatedCollectionsScreen';
+import CollectionsScreen from '../screens/reports/CollectionsScreen';
+import DefaultersScreen from '../screens/reports/DefaultersScreen';
+import NewDealersScreen from '../screens/reports/NewDealersScreen';
+import DealerInvoicesScreen from '../screens/reports/DealerInvoicesScreen';
 import {
   AreasNavigator,
   PopsNavigator,
@@ -108,12 +124,12 @@ const navItems: {title: string; items: NavItem[]}[] = [
   {
     title: 'Messages',
     items: [
-      {label: 'New Messages', icon: Inbox},
-      {label: 'Other Messages', icon: MailQuestionMark},
-      {label: 'Draft Messages', icon: FilePen},
-      {label: 'Sent Messages', icon: Send},
-      {label: 'Expiry Messages', icon: Clock},
-      {label: 'WhatsApp Drafts', icon: MessageCircle},
+       {label: 'New Messages', icon: Inbox, screen: 'NewMessages'},
+      {label: 'Other Messages', icon: MailQuestionMark, screen: 'OtherMessages'},
+      {label: 'Draft Messages', icon: FilePen, screen: 'DraftMessages'},
+      {label: 'Sent Messages', icon: Send, screen: 'SentMessages'},
+      {label: 'Expiry Messages', icon: Clock, screen: 'ExpiryMessages'},
+      {label: 'WhatsApp Drafts', icon: MessageCircle, screen: 'WhatsAppDraft'},
     ],
   },
   {
@@ -130,32 +146,32 @@ const navItems: {title: string; items: NavItem[]}[] = [
   {
     title: 'Sales',
     items: [
-      {label: 'Sales', icon: ShoppingCart},
+      {label: 'Sales', icon: ShoppingCart, screen: 'Sales'},
       {label: 'Customers', icon: UserRound, screen: 'SalesCustomers'},
       {label: 'Installment Plans', icon: FileCog, screen: 'InstallmentPlans'},
-      {label: 'Point of Sale', icon: ShoppingCart},
+      {label: 'Point of Sale', icon: ShoppingCart, screen: 'Pos'},
     ],
   },
   {
     title: 'Transaction',
     items: [
-      {label: 'Subscriber Collections', icon: Users},
-      {label: 'Dealers Collections', icon: Handshake},
-      {label: 'Allocated Collections', icon: ClipboardPen},
+      {label: 'Subscriber Collections', icon: Users, screen: 'SubscriberCollections'},
+      {label: 'Dealers Collections', icon: Handshake, screen: 'DealersCollections'},
+      {label: 'Allocated Collections', icon: ClipboardPen, screen: 'AllocatedCollections'},
       {label: 'Transaction Type', icon: FileCog},
       {label: 'Bad Debt Collections', icon: TriangleAlert},
       {label: 'Bill Creator', icon: ClipboardPen},
     ],
   },
-  {
+   {
     title: 'Dealer Management',
     items: [
-      {label: 'My Dealers', icon: Users},
-      {label: 'Dealer Dashboard', icon: FolderClosed},
-      {label: 'Collections', icon: Wallet},
-      {label: 'Defaulters', icon: TriangleAlert},
-      {label: 'New Dealers', icon: UserPlus},
-      {label: 'Invoices', icon: FileText},
+       {label: 'My Dealers', icon: Users, screen: 'MyDealers'},
+      {label: 'Reports', icon: FolderClosed},
+      {label: 'Collections', icon: Wallet, screen: 'Collections'},
+      {label: 'Defaulters', icon: TriangleAlert, screen: 'Defaulters'},
+      {label: 'New Dealers', icon: UserPlus, screen: 'NewDealers'},
+      {label: 'Invoices', icon: FileText, screen: 'DealerInvoices'},
     ],
   },
   {
@@ -383,8 +399,28 @@ export default function DrawerNavigator() {
       <Drawer.Screen name="Billing" component={BillingScreen} />
       <Drawer.Screen name="More" component={MoreScreen} />
       <Drawer.Screen
-        name="Messages"
-        component={() => <PlaceholderScreen title="Messages" />}
+        name="NewMessages"
+        component={NewMessagesScreen}
+      />
+      <Drawer.Screen
+        name="DraftMessages"
+        component={DraftMessagesScreen}
+      />
+      <Drawer.Screen
+        name="SentMessages"
+        component={SentMessagesScreen}
+      />
+      <Drawer.Screen
+        name="ExpiryMessages"
+        component={ExpiryMessagesScreen}
+      />
+      <Drawer.Screen
+        name="OtherMessages"
+        component={OtherMessagesScreen}
+      />
+      <Drawer.Screen
+        name="WhatsAppDraft"
+        component={WhatsAppDraftScreen}
       />
       <Drawer.Screen
         name="Inquiries"
@@ -420,11 +456,47 @@ export default function DrawerNavigator() {
       />
       <Drawer.Screen
         name="Sales"
-        component={() => <PlaceholderScreen title="Sales" />}
+        component={SalesScreen}
+      />
+      <Drawer.Screen
+        name="Pos"
+        component={PosScreen}
       />
       <Drawer.Screen
         name="Transaction"
         component={() => <PlaceholderScreen title="Transaction" />}
+      />
+      <Drawer.Screen
+        name="SubscriberCollections"
+        component={SubscriberCollectionsScreen}
+      />
+      <Drawer.Screen
+        name="DealersCollections"
+        component={DealersCollectionsScreen}
+      />
+      <Drawer.Screen
+        name="AllocatedCollections"
+        component={AllocatedCollectionsScreen}
+      />
+      <Drawer.Screen
+        name="MyDealers"
+        component={MyDealersScreen}
+      />
+      <Drawer.Screen
+        name="Collections"
+        component={CollectionsScreen}
+      />
+      <Drawer.Screen
+        name="Defaulters"
+        component={DefaultersScreen}
+      />
+      <Drawer.Screen
+        name="NewDealers"
+        component={NewDealersScreen}
+      />
+      <Drawer.Screen
+        name="DealerInvoices"
+        component={DealerInvoicesScreen}
       />
       <Drawer.Screen
         name="DealerManagement"

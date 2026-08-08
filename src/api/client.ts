@@ -165,31 +165,35 @@ async function doEnsureWorkingBaseUrl(excludeUrl?: string): Promise<string> {
     return current;
   }
 
+  // Discover the host's LAN IP (via Metro) while we prepare the sweep. On a
+  // physical device connected over USB, `localhost:8090` only works while an
+  // `adb reverse tcp:8090` rule exists (easily lost on reconnect), so the LAN
+  // IP is the reliable fallback and must be probed as a first-class candidate.
+  const lanPromise = lanIp
+    ? Promise.resolve(lanIp)
+    : discoverLanIp().then(ip => {
+        if (ip) {
+          lanIp = ip;
+          AsyncStorage.setItem(LAN_IP_STORAGE_KEY, ip).catch(() => {});
+        }
+        return ip;
+      });
+
   // Parallel sweep of the remaining candidates.
   const sweep = candidateUrls().filter(u => u !== current && u !== excludeUrl);
+  const ip = await lanPromise;
+  if (ip) {
+    const url = `http://${ip}:${API_PORT}/api/v1`;
+    if (!sweep.includes(url)) {
+      sweep.push(url);
+    }
+  }
+
   const found = await findFirstWorking(sweep);
   if (found) {
     baseUrl = found;
     await persistGoodUrl(found);
     return found;
-  }
-
-  // Last resort: learn the host's LAN IP through Metro and try it once. This is
-  // what keeps the app working after `adb reverse tcp:8090` is lost.
-  const ip = lanIp || (await discoverLanIp());
-  if (ip) {
-    lanIp = ip;
-    try {
-      await AsyncStorage.setItem(LAN_IP_STORAGE_KEY, ip);
-    } catch {
-      // ignore
-    }
-    const url = `http://${ip}:${API_PORT}/api/v1`;
-    if (await probe(url)) {
-      baseUrl = url;
-      await persistGoodUrl(url);
-      return url;
-    }
   }
 
   baseUrl = candidateUrls()[0];

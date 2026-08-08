@@ -1,5 +1,5 @@
 import apiClient from './client';
-import {ApiResponse, Subscriber, Inquiry, CorporateCustomer, Customer, Guarantor, Package, InstallmentPlan} from '../types';
+import {ApiResponse, Subscriber, Inquiry, CorporateCustomer, Customer, Guarantor, Package, InstallmentPlan, Sale, Invoice} from '../types';
 
 // --- Subscribers ---
 
@@ -153,4 +153,47 @@ export async function updateInstallmentPlan(id: string, data: Partial<Installmen
 
 export async function deleteInstallmentPlan(id: string): Promise<void> {
   await apiClient.delete<ApiResponse>(`/sales/installment-plans/${id}`);
+}
+
+// --- Sales ---
+
+export async function getSales(): Promise<Sale[]> {
+  const response = await apiClient.get<ApiResponse<Sale[]>>('/pos/sales');
+  return response.data.data || [];
+}
+
+export async function deleteSale(id: string): Promise<void> {
+  await apiClient.delete<ApiResponse>(`/pos/sales/${id}`);
+}
+
+export async function addSaleToCollection(data: {
+  subscriberId: string;
+  subscriberName: string;
+  amount: number;
+  paymentDate: string;
+  method: string;
+}): Promise<any> {
+  const response = await apiClient.post<ApiResponse>('/billing/payments', data);
+  return response.data;
+}
+
+export async function getInstallmentForSale(
+  subscriberId: string,
+  companyId: string,
+  saleId: string,
+): Promise<any> {
+  const response = await apiClient.get(
+    `/pos/installment/${subscriberId}?companyId=${companyId}&saleId=${saleId}`,
+  );
+  return response.data?.data || response.data;
+}
+
+export async function getBillingSubscribers(): Promise<Subscriber[]> {
+  const response = await apiClient.get<ApiResponse<Subscriber[]>>('/billing/subscribers');
+  return response.data.data || [];
+}
+
+export async function getBillingInvoices(): Promise<Invoice[]> {
+  const response = await apiClient.get<ApiResponse<Invoice[]>>('/billing/invoices');
+  return response.data.data || [];
 }

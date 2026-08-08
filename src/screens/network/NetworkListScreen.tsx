@@ -119,8 +119,12 @@ export default function NetworkListScreen({route, navigation}: any) {
       const data = await crudMap[config.key].list();
       setItems(data);
       setFiltered(data);
-    } catch {
-      setError(`Failed to load ${config.plural}. Check your connection and try again.`);
+    } catch (err: any) {
+      const reason =
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        `Failed to load ${config.plural}. Check your connection and try again.`;
+      setError(reason);
     } finally {
       setLoading(false);
       setRefreshing(false);

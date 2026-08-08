@@ -79,6 +79,7 @@ export interface DashboardData {
 
 export interface Payment {
   id: string;
+  billNo?: number;
   invoiceId?: string;
   subscriberId?: string;
   subscriberName: string;
@@ -86,8 +87,41 @@ export interface Payment {
   paymentDate: string;
   method: string;
   collectorId?: string;
+  address?: string;
+  areaName?: string;
+  collectedByName?: string;
+  companyId?: string;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface PromiseEntry {
+  id: string;
+  companyId?: string;
+  subscriberId?: string;
+  subscriberName?: string;
+  internetId?: string;
+  phone?: string;
+  address?: string;
+  sublocality?: string;
+  connectionType?: string;
+  amount: number;
+  promiseDate: string;
+  description?: string;
+  status: string;
+  collectorId?: string;
+  collectorName?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface TransactionType {
+  id: string;
+  transaction: string;
+  openingBalance?: number;
+  title?: string;
+  paymentChannel?: string;
+  companyId?: string;
 }
 
 export interface Complaint {
@@ -318,6 +352,35 @@ export interface Product {
   updated_at?: string;
 }
 
+export interface Invoice {
+  id: string;
+  subscriberId: string;
+  subscriberName: string;
+  amount: number;
+  paidAmount?: number;
+  remainingAmount?: number;
+  dueDate: string;
+  status: 'paid' | 'pending' | 'overdue' | 'draft';
+  billingPeriod?: string;
+  companyId?: string;
+  batch?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface InvoiceSubscriber {
+  id: string;
+  subscriber_identity: string;
+  name: string;
+  cnic: string;
+  installationAddress: string;
+  balance: number;
+  dealerId?: string | null;
+  companyId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Brand {
   id: string;
   name: string;
@@ -363,3 +426,125 @@ export interface InstallmentPlan {
   created_at?: string;
   updated_at?: string;
 }
+
+export interface SaleItem {
+  id: string;
+  saleId: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  price: number;
+  saleTax?: number;
+  wthTax?: number;
+  serialNumber?: string;
+}
+
+export interface Sale {
+  id: string;
+  subscriberId: string;
+  subscriberName: string;
+  totalAmount: number;
+  taxAmount: number;
+  paymentMethod: string;
+  date: string;
+  companyId: string;
+  isInstallment?: boolean;
+  installmentPlanId?: string;
+  items: SaleItem[];
+}
+
+// --- Messages Module ---
+
+export type MessageTemplate = {
+  id: string;
+  title: string;
+  message: string;
+  parameters?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  companyId?: string;
+};
+
+export type Message = {
+  id: string;
+  status: string;
+  entityId: string;
+  internetId?: string;
+  name: string;
+  mobileNo?: string;
+  phone?: string;
+  address?: string;
+  messageType: string;
+  messageText: string;
+  sentBy?: string;
+  sendedAt?: string;
+  sendTo: string;
+  companyId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type Dealer = {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  cnic?: string;
+  address?: string;
+  commissionRate?: number;
+  walletBalance?: number;
+  companyId?: string;
+  franchiseId?: string;
+  parentDealerId?: string;
+  areaId?: string;
+  areaName?: string;
+  lastPaymentDate?: string;
+  remainingAmount?: number;
+  internetId?: string;
+  cell?: string;
+  localityId?: string;
+  joiningDate?: string;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type Staff = {
+  id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  designation?: string;
+  department?: string;
+  companyId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type RecoveryOfficer = {
+  id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  areaId?: string;
+  companyId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type DealerCollection = {
+  id: string;
+  dealerId: string;
+  dealerName: string;
+  dealerAddress: string;
+  amount: number;
+  collectionDate: string;
+  settlementStatus: 'pending' | 'settled';
+  transactionType: 'cash' | 'bank' | 'easypaisa' | 'jazzcash';
+  comment: string;
+  receivedById?: string | null;
+  receivedByName: string;
+  companyId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};

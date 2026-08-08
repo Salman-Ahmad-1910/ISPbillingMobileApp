@@ -21,6 +21,7 @@ import {getApiBaseUrl} from '../api/client';
 import {DashboardData} from '../types';
 import GaugeMeter from '../components/GaugeMeter';
 import AreaChart from '../components/AreaChart';
+import {GradientView} from '../components/GradientView';
 
 function DoorMenuIcon({open}: {open: boolean}) {
   const slide = useRef(new Animated.Value(open ? 1 : 0)).current;
@@ -200,37 +201,12 @@ export default function DashboardScreen() {
   return (
     <View style={styles.container}>
       {/* Top App Bar */}
-      <View style={styles.topBar}>
-        <View style={[styles.topBarAccent, {backgroundColor: '#2563EB'}]} />
+      <GradientView colors={['#166534', '#22c55e']} style={styles.topBar}>
         <TouchableOpacity style={styles.menuButton} onPress={openDrawer}>
           <DoorMenuIcon open={drawerStatus === 'open'} />
         </TouchableOpacity>
-        <Text style={[styles.topBarTitle, {color: '#2563EB'}]}>Dashboard</Text>
-      </View>
-
-      {/* Company Banner */}
-      <View style={styles.companyBanner}>
-        {logoUrl ? (
-          <Image
-            source={{uri: logoUrl}}
-            style={styles.logo}
-            resizeMode="contain"
-            onError={() => setLogoUrl(null)}
-          />
-        ) : (
-          <View style={styles.logoFallback}>
-            <LayoutDashboard size={22} color="#FFFFFF" />
-          </View>
-        )}
-        <View style={styles.companyInfo}>
-          <Text style={styles.companyName} numberOfLines={1}>
-            {companyName || 'Dashboard'}
-          </Text>
-          <Text style={styles.companySubtitle}>
-            Here&apos;s a real-time overview of your network and business operations.
-          </Text>
-        </View>
-      </View>
+        <Text style={styles.topBarTitle}>Dashboard</Text>
+      </GradientView>
 
       <ScrollView
         style={styles.scroll}
@@ -239,6 +215,30 @@ export default function DashboardScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563EB']} />
         }
         showsVerticalScrollIndicator={false}>
+        {/* Company Banner (scrolls with content) */}
+        <View style={styles.companyBanner}>
+          {logoUrl ? (
+            <Image
+              source={{uri: logoUrl}}
+              style={styles.logo}
+              resizeMode="contain"
+              onError={() => setLogoUrl(null)}
+            />
+          ) : (
+            <View style={styles.logoFallback}>
+              <LayoutDashboard size={22} color="#FFFFFF" />
+            </View>
+          )}
+          <View style={styles.companyInfo}>
+            <Text style={styles.companyName} numberOfLines={1}>
+              {companyName || 'Dashboard'}
+            </Text>
+            <Text style={styles.companySubtitle}>
+              Here&apos;s a real-time overview of your network and business operations.
+            </Text>
+          </View>
+        </View>
+
         {/* KPI Cards */}
         <View style={styles.kpiGrid}>
           {kpiCards.map((kpi, index) => (
@@ -466,39 +466,36 @@ const styles = StyleSheet.create({
     marginLeft: 16,
     paddingVertical: 8,
     paddingHorizontal: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#166534',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.06)',
-    shadowColor: '#000',
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    shadowColor: '#166534',
     shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 5,
-  },
-  topBarAccent: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    borderTopLeftRadius: 16,
-    borderBottomLeftRadius: 16,
   },
   topBarTitle: {
     fontSize: 16,
     fontWeight: '700',
+    color: '#FFFFFF',
     paddingRight: 8,
   },
   companyBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 14,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
+    padding: 16,
+    marginBottom: 4,
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   companyInfo: {
     flex: 1,
@@ -518,7 +515,7 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 4,
     borderWidth: 2,
-    borderColor: '#374151',
+    borderColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -526,13 +523,13 @@ const styles = StyleSheet.create({
     width: 12,
     height: 2,
     borderRadius: 1,
-    backgroundColor: '#374151',
+    backgroundColor: '#FFFFFF',
   },
   menuButton: {
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,

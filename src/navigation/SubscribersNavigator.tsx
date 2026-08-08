@@ -5,6 +5,7 @@ import SubscriberDetailScreen from '../screens/subscribers/SubscriberDetailScree
 import SubscriberFormScreen from '../screens/subscribers/SubscriberFormScreen';
 import InquiriesScreen from '../screens/subscribers/InquiriesScreen';
 import CorporateScreen from '../screens/subscribers/CorporateScreen';
+import SalesScreen from '../screens/subscribers/SalesScreen';
 
 export type SubscribersStackParamList = {
   SubscriberList: undefined;
@@ -12,6 +13,7 @@ export type SubscribersStackParamList = {
   SubscriberForm: {subscriber?: any};
   Inquiries: undefined;
   Corporate: undefined;
+  Sales: undefined;
 };
 
 const Stack = createNativeStackNavigator<SubscribersStackParamList>();
@@ -24,6 +26,7 @@ export default function SubscribersNavigator() {
       <Stack.Screen name="SubscriberForm" component={SubscriberFormScreen} />
       <Stack.Screen name="Inquiries" component={InquiriesScreen} />
       <Stack.Screen name="Corporate" component={CorporateScreen} />
+      <Stack.Screen name="Sales" component={SalesScreen} />
     </Stack.Navigator>
   );
 }

@@ -1,4 +1,7 @@
 {
   "editor.inlineSuggest.enabled": false,
-  "github.copilot.editor.enableAutoCompletions": false
+  "github.copilot.editor.enableAutoCompletions": false,
+  "[go]": {
+    "editor.inlineSuggest.enabled": false
+  }
 }
