@@ -46,7 +46,6 @@ import {Dealer, DealerCollection, Area, RecoveryOfficer} from '../../types';
 import {GradientButton} from '../../components/GradientButton';
 import {GradientView} from '../../components/GradientView';
 import {PrintReceiptDialog} from '../../components/PrintReceiptDialog';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 const PAGE_SIZES = [5, 10, 25, 50, 100];
 
@@ -308,7 +307,6 @@ export default function DealersCollectionsScreen() {
   const nav = useNavigation();
   const drawerStatus = useDrawerStatus();
   const {user, companies, companyId} = useAuth();
-  const insets = useSafeAreaInsets();
 
   const [dealers, setDealers] = useState<Dealer[]>([]);
   const [collections, setCollections] = useState<DealerCollection[]>([]);
@@ -757,7 +755,7 @@ export default function DealersCollectionsScreen() {
 
   return (
     <View style={styles.container}>
-      <GradientView colors={['#166534', '#22c55e']} style={[styles.header, {paddingTop: insets.top + 8}]}>
+       <GradientView colors={['#166534', '#22c55e']} style={styles.header}>
         <TouchableOpacity style={styles.menuButton} onPress={openDrawer}>
           <DoorMenuIcon open={drawerStatus === 'open'} />
         </TouchableOpacity>
@@ -792,7 +790,10 @@ export default function DealersCollectionsScreen() {
 
             <DealersCollectionsDivider />
 
-            <View style={styles.statsRow}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.statsScroll}>
               <StatCard
                 label="Total Dealers"
                 value={String(totalDealers)}
@@ -811,18 +812,13 @@ export default function DealersCollectionsScreen() {
                 colors={['#10B981', '#059669']}
                 icon={<DollarSign size={16} color="#FFFFFF" />}
               />
-            </View>
-
-            <View style={styles.statsRow}>
               <StatCard
                 label="Remaining Amount"
                 value={formatMoney(totalWalletBalance)}
                 colors={['#8B5CF6', '#7C3AED']}
                 icon={<UserCheck size={16} color="#FFFFFF" />}
               />
-              <View style={styles.statCardSpacer} />
-              <View style={styles.statCardSpacer} />
-            </View>
+            </ScrollView>
 
             <View style={styles.searchCard}>
               <Text style={styles.searchLabel}>Search Dealer</Text>
@@ -1387,9 +1383,15 @@ const styles = StyleSheet.create({
   loadingText: {marginTop: 12, fontSize: 14, color: '#6B7280'},
   header: {
     flexDirection: 'row', alignItems: 'center',
-    width: '100%',
-    paddingBottom: 8, paddingLeft: 8, paddingRight: 8,
+    alignSelf: 'flex-start',
+    marginTop: 50,
+    marginLeft: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
     backgroundColor: '#166534',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
     shadowColor: '#166534', shadowOffset: {width: 0, height: 4},
     shadowOpacity: 0.25, shadowRadius: 10, elevation: 5,
   },
@@ -1444,21 +1446,20 @@ const styles = StyleSheet.create({
   heroSubtitle: {fontSize: 12, color: '#6B7280', marginTop: 2},
   heroSubtitleStrong: {fontWeight: '600', color: '#374151'},
   heroDivider: {marginHorizontal: 20, marginBottom: 4},
-  statsRow: {
+  statsScroll: {
     flexDirection: 'row',
     gap: 8,
     paddingHorizontal: 16,
     marginTop: 12,
   },
   statCard: {
-    flex: 1,
+    width: 160,
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
     padding: 12,
   },
-  statCardSpacer: {flex: 1},
   statIconBox: {
     width: 32,
     height: 32,

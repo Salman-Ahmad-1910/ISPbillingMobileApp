@@ -38,7 +38,6 @@ import {getPayments, createPayment} from '../../api/billing';
 import {Subscriber, Payment} from '../../types';
 import {GradientButton} from '../../components/GradientButton';
 import {GradientView} from '../../components/GradientView';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
 
 const PAGE_SIZES = [5, 10, 25, 50, 100];
 
@@ -308,7 +307,6 @@ export default function AllocatedCollectionsScreen() {
   const nav = useNavigation();
   const drawerStatus = useDrawerStatus();
   const {user} = useAuth();
-  const insets = useSafeAreaInsets();
 
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -661,7 +659,7 @@ export default function AllocatedCollectionsScreen() {
 
   return (
     <View style={styles.container}>
-      <GradientView colors={['#166534', '#22c55e']} style={[styles.header, {paddingTop: insets.top + 8}]}>
+       <GradientView colors={['#166534', '#22c55e']} style={styles.header}>
         <TouchableOpacity style={styles.menuButton} onPress={openDrawer}>
           <DoorMenuIcon open={drawerStatus === 'open'} />
         </TouchableOpacity>
@@ -1246,9 +1244,15 @@ const styles = StyleSheet.create({
   loadingText: {marginTop: 12, fontSize: 14, color: '#6B7280'},
   header: {
     flexDirection: 'row', alignItems: 'center',
-    width: '100%',
-    paddingBottom: 8, paddingLeft: 8, paddingRight: 8,
+    alignSelf: 'flex-start',
+    marginTop: 50,
+    marginLeft: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
     backgroundColor: '#166534',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
     shadowColor: '#166534', shadowOffset: {width: 0, height: 4},
     shadowOpacity: 0.25, shadowRadius: 10, elevation: 5,
   },

@@ -265,8 +265,17 @@ export default function SalesScreen() {
     if (item.isInstallment && itemsSubtotal > 0) {
       increasePercent = Math.round(((displayAmount - (Number(item.taxAmount) || 0)) / itemsSubtotal - 1) * 100);
     }
-    const serials = (item.items || []).map(i => i.serialNumber).filter(Boolean);
+    const serials = (item.items || [])
+      .map(i => i.serialNumber)
+      .filter(Boolean)
+      .flatMap((s: any) =>
+        String(s)
+          .split(',')
+          .map((x: string) => x.trim())
+          .filter(Boolean),
+      );
     const uniqueSerials = [...new Set(serials as string[])];
+    const singleSerial = uniqueSerials[0] || '';
 
     return (
       <TouchableOpacity style={styles.card} onPress={() => openDetail(item)}>
@@ -301,14 +310,14 @@ export default function SalesScreen() {
           <Text style={styles.infoLabel}>Items</Text>
           <Text style={styles.infoValue}>{totalQty} item{totalQty !== 1 ? 's' : ''}</Text>
         </View>
-        {uniqueSerials.length > 0 && (
+        {singleSerial ? (
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>SN / MAC</Text>
             <Text style={[styles.infoValue, styles.serialText]} numberOfLines={1}>
-              {uniqueSerials.join(', ')}
+              {singleSerial}
             </Text>
           </View>
-        )}
+        ) : null}
         <View style={styles.cardFooter}>
           <View style={styles.cardActions}>
             <TouchableOpacity

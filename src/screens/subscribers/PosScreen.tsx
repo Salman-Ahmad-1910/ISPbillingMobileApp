@@ -12,6 +12,7 @@ import {
   ScrollView,
   Platform,
   Animated,
+  Image,
 } from 'react-native';
 import {useFocusEffect, useNavigation, DrawerActions} from '@react-navigation/native';
 import {useDrawerStatus} from '@react-navigation/drawer';
@@ -36,6 +37,7 @@ import {
   ChevronDown,
 } from 'lucide-react-native';
 import {getPurchasedProducts, getDealers, getInstallmentForCustomer, createSale, createInstallmentSale, payInstallment, PosProduct, Dealer} from '../../api/pos';
+import {getApiBaseUrl} from '../../api/client';
 import {getConnections} from '../../api/connections';
 import {getCustomers, getInstallmentPlans} from '../../api/subscribers';
 import {Customer, Connection, InstallmentPlan} from '../../types';
@@ -143,19 +145,48 @@ export default function PosScreen() {
       if (!isRefresh) {
         setLoading(true);
       }
-      const [prod, cust, deal, conn, plan] = await Promise.all([
+      const [prod, cust, deal, conn, plan, base] = await Promise.all([
         getPurchasedProducts(),
         getCustomers().catch(() => [] as Customer[]),
         getDealers().catch(() => [] as Dealer[]),
         getConnections().catch(() => [] as Connection[]),
         getInstallmentPlans().catch(() => [] as InstallmentPlan[]),
+        getApiBaseUrl(),
       ]);
-      setProducts((prod || []).map(p => ({
-        ...p,
-        stock: Number(p.stock) || 0,
-        price: Number(p.price) || 0,
-        taxPercent: Number(p.taxPercent) || 0,
-      })));
+      const resolveImage = (path?: string) => {
+        if (!path) {
+          return undefined;
+        }
+        if (/^https?:\/\//i.test(path)) {
+          return path;
+        }
+        return `${base}${path.startsWith('/') ? '' : '/'}${path}`;
+      };
+      const byId = new Map<string, PosProduct>();
+      for (const p of prod || []) {
+        const normalized = {
+          ...p,
+          stock: Number(p.stock) || 0,
+          price: Number(p.price) || 0,
+          taxPercent: Number(p.taxPercent) || 0,
+          image: resolveImage(p.image),
+        };
+        const existing = byId.get(p.id);
+        if (!existing) {
+          byId.set(p.id, normalized);
+          continue;
+        }
+        const serials = [existing.serialNumber, normalized.serialNumber]
+          .filter(Boolean)
+          .join(', ');
+        byId.set(p.id, {
+          ...existing,
+          stock: existing.stock + normalized.stock,
+          serialNumber: serials || undefined,
+          image: existing.image || normalized.image,
+        });
+      }
+      setProducts(Array.from(byId.values()));
       setCustomers(cust || []);
       setDealers(deal || []);
       setSubscribers(conn || []);
@@ -559,7 +590,11 @@ export default function PosScreen() {
         activeOpacity={0.7}
         onPress={() => addToCart(item)}>
         <View style={styles.productImage}>
-          <Text style={styles.productImageIcon}>📦</Text>
+          {item.image ? (
+            <Image source={{uri: item.image}} style={styles.productImageImg} resizeMode="cover" />
+          ) : (
+            <Text style={styles.productImageIcon}>📦</Text>
+          )}
           <View
             style={[
               styles.stockBadge,
@@ -1282,6 +1317,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   productImageIcon: {fontSize: 34},
+  productImageImg: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+  },
   stockBadge: {
     position: 'absolute',
     top: 6,

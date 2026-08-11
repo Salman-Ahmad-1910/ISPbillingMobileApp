@@ -128,13 +128,35 @@ export interface Complaint {
   id: string;
   subscriberId: string;
   subscriberName: string;
-  category: string;
+  phone?: string;
+  address?: string;
+  type?: string;
+  subject?: string;
+  department?: string;
+  priority?: string;
+  deadline?: string;
+  category?: string;
   description: string;
   status: string;
-  assignedToId?: string;
+  assignedToId?: string | null;
   resolvedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface ComplaintSubject {
+  id: string;
+  subject: string;
+  type: string;
+  companyId?: string;
+}
+
+export interface ComplaintType {
+  id: string;
+  name: string;
+  companyId?: string;
 }
 
 // --- Subscriber Module ---
@@ -381,6 +403,62 @@ export interface InvoiceSubscriber {
   updatedAt?: string;
 }
 
+export interface PurchasedProduct {
+  purchaseItemId: string;
+  id: string;
+  name: string;
+  price: number;
+  stock: number;
+  unitType: string;
+  taxPercent: number;
+  purchasePrice: number;
+  billId: string;
+  purchaseNumber: string;
+  vendorName: string;
+  purchaseDate: string;
+  batch: string;
+  serialNumber: string;
+  image?: string;
+}
+
+export interface PurchaseItem {
+  id?: string;
+  purchaseId?: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  purchasePrice: number;
+  sellingPrice: number;
+  unitType?: string;
+  focNormal?: string;
+  subtotal: number;
+  saleTax?: number;
+  wthTax?: number;
+  disc?: number;
+  expiryDate?: string;
+  serialNumber?: string;
+}
+
+export interface Purchase {
+  id: string;
+  vendorId: string;
+  vendorName: string;
+  purchaseNumber: string;
+  purchaseDate: string;
+  billId: string;
+  batch: string;
+  totalAmount: number;
+  remainingAmount: number;
+  discount: number;
+  salesTax: number;
+  wthTax: number;
+  status: 'paid' | 'unpaid' | 'partial';
+  items: PurchaseItem[];
+  createdAt?: string;
+  updatedAt?: string;
+  companyId?: string;
+}
+
 export interface Brand {
   id: string;
   name: string;
@@ -404,6 +482,44 @@ export interface UnitType {
   companyId?: string;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface Vendor {
+  id: string;
+  name: string;
+  contactPerson?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  companyId?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface VendorInvoiceItem {
+  id?: string;
+  invoiceId?: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  unitType?: string;
+  subtotal: number;
+  serialNumber?: string;
+}
+
+export interface VendorInvoice {
+  id: string;
+  vendorId: string;
+  vendorName: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  totalAmount: number;
+  batch?: string;
+  items: VendorInvoiceItem[];
+  createdAt?: string;
+  updatedAt?: string;
+  companyId?: string;
 }
 
 export interface SerialNumberPoolEntry {
@@ -516,6 +632,7 @@ export type Staff = {
   phone?: string;
   designation?: string;
   department?: string;
+  areaId?: string;
   companyId?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -544,7 +661,49 @@ export type DealerCollection = {
   comment: string;
   receivedById?: string | null;
   receivedByName: string;
+  subscriberId?: string;
+  subscriberName?: string;
   companyId?: string;
   createdAt?: string;
   updatedAt?: string;
 };
+
+// --- Accounts Module ---
+
+export interface AccountHead {
+  id: string;
+  masterAccount: string;
+  accountType: string;
+  description?: string;
+  companyId?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AccountSubHead {
+  id: string;
+  subMasterAccount: string;
+  masterAccountId: string;
+  masterAccount: string;
+  accountType: string;
+  budget?: string;
+  description?: string;
+  companyId?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface AccountEntry {
+  id: string;
+  head: string;
+  subHead: string;
+  description: string;
+  date: string;
+  addBy: string;
+  editBy: string;
+  amount: number;
+  transactionType: string;
+  companyId?: string;
+  created_at?: string;
+  updated_at?: string;
+}

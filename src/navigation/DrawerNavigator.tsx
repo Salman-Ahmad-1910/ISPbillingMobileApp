@@ -20,6 +20,14 @@ import CustomersScreen from '../screens/subscribers/CustomersScreen';
 import GuarantorsScreen from '../screens/subscribers/GuarantorsScreen';
 import PackagesScreen from '../screens/subscribers/PackagesScreen';
 import ProductsScreen from '../screens/subscribers/ProductsScreen';
+import StockScreen from '../screens/subscribers/StockScreen';
+import BrandsScreen from '../screens/subscribers/BrandsScreen';
+import UnitTypesScreen from '../screens/subscribers/UnitTypesScreen';
+import ProductTypesScreen from '../screens/subscribers/ProductTypesScreen';
+import PurchasesScreen from '../screens/subscribers/PurchasesScreen';
+import InventoryStatusScreen from '../screens/subscribers/InventoryStatusScreen';
+import VendorsScreen from '../screens/subscribers/VendorsScreen';
+import VendorInvoicesScreen from '../screens/subscribers/VendorInvoicesScreen';
 import InstallmentPlansScreen from '../screens/subscribers/InstallmentPlansScreen';
 import SalesScreen from '../screens/subscribers/SalesScreen';
 import SalesCustomersScreen from '../screens/subscribers/SalesCustomersScreen';
@@ -34,10 +42,21 @@ import MyDealersScreen from '../screens/subscribers/MyDealersScreen';
 import SubscriberCollectionsScreen from '../screens/transaction/SubscriberCollectionsScreen';
 import DealersCollectionsScreen from '../screens/transaction/DealersCollectionsScreen';
 import AllocatedCollectionsScreen from '../screens/transaction/AllocatedCollectionsScreen';
+import TransactionTypeScreen from '../screens/transaction/TransactionTypeScreen';
+import BadDebtCollectionsScreen from '../screens/transaction/BadDebtCollectionsScreen';
+import BillCreatorScreen from '../screens/transaction/BillCreatorScreen';
 import CollectionsScreen from '../screens/reports/CollectionsScreen';
 import DefaultersScreen from '../screens/reports/DefaultersScreen';
 import NewDealersScreen from '../screens/reports/NewDealersScreen';
 import DealerInvoicesScreen from '../screens/reports/DealerInvoicesScreen';
+import AccountHeadScreen from '../screens/accounts/AccountHeadScreen';
+import AccountEntryScreen from '../screens/accounts/AccountEntryScreen';
+import AccountReportsScreen from '../screens/accounts/AccountReportsScreen';
+import OneDayBalanceSheetScreen from '../screens/accounts/OneDayBalanceSheetScreen';
+import UserComplaintScreen from '../screens/complaints/UserComplaintScreen';
+import AllocatedComplaintScreen from '../screens/complaints/AllocatedComplaintScreen';
+import SubjectTypeScreen from '../screens/complaints/SubjectTypeScreen';
+import ComplaintReportScreen from '../screens/complaints/ComplaintReportScreen';
 import {
   AreasNavigator,
   PopsNavigator,
@@ -158,9 +177,9 @@ const navItems: {title: string; items: NavItem[]}[] = [
       {label: 'Subscriber Collections', icon: Users, screen: 'SubscriberCollections'},
       {label: 'Dealers Collections', icon: Handshake, screen: 'DealersCollections'},
       {label: 'Allocated Collections', icon: ClipboardPen, screen: 'AllocatedCollections'},
-      {label: 'Transaction Type', icon: FileCog},
-      {label: 'Bad Debt Collections', icon: TriangleAlert},
-      {label: 'Bill Creator', icon: ClipboardPen},
+      {label: 'Transaction Type', icon: FileCog, screen: 'TransactionType'},
+      {label: 'Bad Debt Collections', icon: TriangleAlert, screen: 'BadDebtCollections'},
+      {label: 'Bill Creator', icon: ClipboardPen, screen: 'BillCreator'},
     ],
   },
    {
@@ -178,32 +197,32 @@ const navItems: {title: string; items: NavItem[]}[] = [
     title: 'Inventory',
     items: [
       {label: 'Products', icon: Box, screen: 'Products'},
-      {label: 'Stock', icon: Warehouse},
-      {label: 'Brands', icon: Tag},
-      {label: 'Unit Type', icon: Ruler},
-      {label: 'Product Type', icon: Shapes},
-      {label: 'Inventory Status', icon: Activity},
-      {label: 'Purchase', icon: ArrowLeftRight},
-      {label: 'Vendors', icon: Building2},
-      {label: 'Store', icon: Warehouse},
+      {label: 'Stock', icon: Warehouse, screen: 'Stock'},
+      {label: 'Brands', icon: Tag, screen: 'Brands'},
+      {label: 'Unit Type', icon: Ruler, screen: 'UnitTypes'},
+      {label: 'Product Type', icon: Shapes, screen: 'ProductTypes'},
+      {label: 'Inventory Status', icon: Activity, screen: 'InventoryStatus'},
+      {label: 'Purchase', icon: ArrowLeftRight, screen: 'Purchases'},
+      {label: 'Vendors', icon: Building2, screen: 'Vendors'},
+      {label: 'Vendor Invoice', icon: FileText, screen: 'VendorInvoices'},
     ],
   },
   {
     title: 'Accounts',
     items: [
-      {label: 'Account Head', icon: Layers},
-      {label: 'Account Entry', icon: ClipboardPen},
-      {label: 'Account Reports', icon: FileText},
-      {label: 'One Day Balance Sheet', icon: ChartBarBig},
+      {label: 'Account Head', icon: Layers, screen: 'AccountHead'},
+      {label: 'Account Entry', icon: ClipboardPen, screen: 'AccountEntry'},
+      {label: 'Account Reports', icon: FileText, screen: 'AccountReports'},
+      {label: 'One Day Balance Sheet', icon: ChartBarBig, screen: 'OneDayBalanceSheet'},
     ],
   },
   {
     title: 'Complaints',
     items: [
-      {label: 'User Complaint', icon: UserPlus},
-      {label: 'Allocated Complaint', icon: ClipboardPen},
-      {label: 'Subject Type', icon: BookOpen},
-      {label: 'Complaint Report', icon: FileText},
+      {label: 'User Complaint', icon: UserPlus, screen: 'UserComplaints'},
+      {label: 'Allocated Complaint', icon: ClipboardPen, screen: 'AllocatedComplaints'},
+      {label: 'Subject Type', icon: BookOpen, screen: 'SubjectType'},
+      {label: 'Complaint Report', icon: FileText, screen: 'ComplaintReport'},
     ],
   },
   {
@@ -447,6 +466,38 @@ export default function DrawerNavigator() {
         component={ProductsScreen}
       />
       <Drawer.Screen
+        name="Stock"
+        component={StockScreen}
+      />
+      <Drawer.Screen
+        name="Brands"
+        component={BrandsScreen}
+      />
+      <Drawer.Screen
+        name="UnitTypes"
+        component={UnitTypesScreen}
+      />
+      <Drawer.Screen
+        name="ProductTypes"
+        component={ProductTypesScreen}
+      />
+      <Drawer.Screen
+        name="Purchases"
+        component={PurchasesScreen}
+      />
+      <Drawer.Screen
+        name="InventoryStatus"
+        component={InventoryStatusScreen}
+      />
+      <Drawer.Screen
+        name="Vendors"
+        component={VendorsScreen}
+      />
+      <Drawer.Screen
+        name="VendorInvoices"
+        component={VendorInvoicesScreen}
+      />
+      <Drawer.Screen
         name="InstallmentPlans"
         component={InstallmentPlansScreen}
       />
@@ -479,6 +530,18 @@ export default function DrawerNavigator() {
         component={AllocatedCollectionsScreen}
       />
       <Drawer.Screen
+        name="TransactionType"
+        component={TransactionTypeScreen}
+      />
+      <Drawer.Screen
+        name="BadDebtCollections"
+        component={BadDebtCollectionsScreen}
+      />
+      <Drawer.Screen
+        name="BillCreator"
+        component={BillCreatorScreen}
+      />
+      <Drawer.Screen
         name="MyDealers"
         component={MyDealersScreen}
       />
@@ -497,6 +560,38 @@ export default function DrawerNavigator() {
       <Drawer.Screen
         name="DealerInvoices"
         component={DealerInvoicesScreen}
+      />
+      <Drawer.Screen
+        name="AccountHead"
+        component={AccountHeadScreen}
+      />
+      <Drawer.Screen
+        name="AccountEntry"
+        component={AccountEntryScreen}
+      />
+      <Drawer.Screen
+        name="AccountReports"
+        component={AccountReportsScreen}
+      />
+      <Drawer.Screen
+        name="OneDayBalanceSheet"
+        component={OneDayBalanceSheetScreen}
+      />
+      <Drawer.Screen
+        name="UserComplaints"
+        component={UserComplaintScreen}
+      />
+      <Drawer.Screen
+        name="AllocatedComplaints"
+        component={AllocatedComplaintScreen}
+      />
+      <Drawer.Screen
+        name="SubjectType"
+        component={SubjectTypeScreen}
+      />
+      <Drawer.Screen
+        name="ComplaintReport"
+        component={ComplaintReportScreen}
       />
       <Drawer.Screen
         name="DealerManagement"

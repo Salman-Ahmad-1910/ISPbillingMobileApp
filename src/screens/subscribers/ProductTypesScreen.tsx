@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -11,60 +11,38 @@ import {
   Alert,
   Modal,
   ScrollView,
-  Animated,
+  KeyboardAvoidingView,
   Platform,
+  Animated,
 } from 'react-native';
 import {useFocusEffect, useNavigation, DrawerActions} from '@react-navigation/native';
 import {useDrawerStatus} from '@react-navigation/drawer';
 import Svg, {Rect, Defs, LinearGradient, Stop} from 'react-native-svg';
 import {
-  FileText,
+  Shapes,
+  CheckCircle,
+  Layers,
   Search,
+  PlusCircle,
+  Pencil,
+  Trash2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ArrowRight,
   Check,
-  Calendar,
-  Wallet,
 } from 'lucide-react-native';
-import {getBillingInvoices, getBillingSubscribers} from '../../api/subscribers';
-import {Invoice, Subscriber} from '../../types';
+import {
+  getProductTypes,
+  createProductType,
+  updateProductType,
+  deleteProductType,
+} from '../../api/inventory';
+import {ProductType} from '../../types';
 import {GradientButton} from '../../components/GradientButton';
 import {GradientView} from '../../components/GradientView';
 
-const PAGE_SIZES = [10, 20, 50, 100];
-
-type FilterOption = {label: string; value: string};
-
-const STATUS_OPTIONS: FilterOption[] = [
-  {label: 'All Statuses', value: 'all'},
-  {label: 'Paid', value: 'paid'},
-  {label: 'Pending', value: 'pending'},
-  {label: 'Overdue', value: 'overdue'},
-  {label: 'Draft', value: 'draft'},
-];
-
-interface CombinedRow {
-  subscriberId: string;
-  subscriberIdentity: string;
-  dealerId: string | null;
-  cnic: string;
-  name: string;
-  address: string;
-  balance: number;
-  invoiceId: string;
-  invoiceAmount: number;
-  invoiceDueDate: string;
-  invoiceStatus: string;
-  invoiceBillingPeriod: string;
-  invoiceDate: string;
-}
-
-type SelectSheetState = {
-  key: string;
-  title: string;
-  options: FilterOption[];
-  selected: string;
-  onSelect: (v: string) => void;
-} | null;
+const PAGE_SIZES = [5, 10, 20, 50, 100];
 
 function DoorMenuIcon({open}: {open: boolean}) {
   const slide = useRef(new Animated.Value(open ? 1 : 0)).current;
@@ -89,47 +67,40 @@ function DoorMenuIcon({open}: {open: boolean}) {
   );
 }
 
-function InvoicesDivider() {
+function ProductTypesDivider() {
   return (
     <View style={styles.heroDivider}>
       <Svg height="2" width="100%">
         <Defs>
-          <LinearGradient id="invoicesHeroGrad" x1="0" y1="0" x2="1" y2="0">
-            <Stop offset="0" stopColor="#10B981" stopOpacity="1" />
-            <Stop offset="0.7" stopColor="#16A34A" stopOpacity="0.6" />
-            <Stop offset="1" stopColor="#16A34A" stopOpacity="0" />
+          <LinearGradient id="productTypesHeroGrad" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor="#F59E0B" stopOpacity="1" />
+            <Stop offset="0.7" stopColor="#EA580C" stopOpacity="0.6" />
+            <Stop offset="1" stopColor="#EA580C" stopOpacity="0" />
           </LinearGradient>
         </Defs>
-        <Rect x="0" y="0" width="100%" height="2" fill="url(#invoicesHeroGrad)" />
+        <Rect x="0" y="0" width="100%" height="2" fill="url(#productTypesHeroGrad)" />
       </Svg>
     </View>
   );
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  paid: '#10B981',
-  pending: '#F59E0B',
-  overdue: '#EF4444',
-  draft: '#6B7280',
-};
-
-export default function DealerInvoicesScreen() {
+export default function ProductTypesScreen() {
   const nav = useNavigation();
   const drawerStatus = useDrawerStatus();
-
-  const [rows, setRows] = useState<CombinedRow[]>([]);
-  const [filtered, setFiltered] = useState<CombinedRow[]>([]);
+  const [items, setItems] = useState<ProductType[]>([]);
+  const [filtered, setFiltered] = useState<ProductType[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-  const [status, setStatus] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [pageInput, setPageInput] = useState('');
   const [pageSizeOpen, setPageSizeOpen] = useState(false);
-  const [selectSheet, setSelectSheet] = useState<SelectSheetState>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<ProductType | null>(null);
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const openDrawer = () => {
     nav.dispatch(DrawerActions.openDrawer());
@@ -142,101 +113,51 @@ export default function DealerInvoicesScreen() {
       } else {
         setLoading(true);
       }
-      const [subscribers, invoices] = await Promise.all([
-        getBillingSubscribers().catch(() => []),
-        getBillingInvoices().catch(() => []),
-      ]);
-
-      const subscriberMap = new Map<string, Subscriber>();
-      subscribers.forEach(s => subscriberMap.set(s.id, s));
-
-      const combined: CombinedRow[] = (invoices || []).map((inv: Invoice) => {
-        const sub = subscriberMap.get(inv.subscriberId);
-        return {
-          subscriberId: sub?.id || inv.subscriberId,
-          subscriberIdentity: sub?.subscriber_identity || inv.subscriberId.slice(0, 8),
-          dealerId: sub?.dealerId || null,
-          cnic: sub?.cnic || '-',
-          name: sub?.name || inv.subscriberName || '-',
-          address: sub?.installationAddress || '-',
-          balance: sub?.balance ?? 0,
-          invoiceId: inv.id,
-          invoiceAmount: inv.amount || 0,
-          invoiceDueDate: inv.dueDate,
-          invoiceStatus: inv.status,
-          invoiceBillingPeriod: inv.billingPeriod || '',
-          invoiceDate: inv.createdAt || '',
-        };
-      });
-
-      setRows(combined);
-    } catch {
-      Alert.alert('Error', 'Failed to load invoices');
+      setError(null);
+      const data = await getProductTypes();
+      setItems(data);
+      setFiltered(data);
+    } catch (err: any) {
+      const reason =
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        'Failed to load product types. Check your connection and try again.';
+      setError(reason);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useFocusEffect(useCallback(() => {fetchData();}, [fetchData]));
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fetchData]),
+  );
 
   useEffect(() => {
-    let result = rows;
+    setCurrentPage(1);
+  }, [search]);
 
+  useEffect(() => {
     if (search.trim()) {
       const q = search.toLowerCase();
-      result = result.filter(
-        r =>
-          (r.subscriberIdentity || '').toLowerCase().includes(q) ||
-          (r.name || '').toLowerCase().includes(q) ||
-          (r.cnic || '').toLowerCase().includes(q) ||
-          (r.invoiceBillingPeriod || '').toLowerCase().includes(q),
-      );
+      setFiltered(items.filter(i => i.name.toLowerCase().includes(q)));
+    } else {
+      setFiltered(items);
     }
+  }, [search, items]);
 
-    if (fromDate) {
-      result = result.filter(r => (r.invoiceDate || '').slice(0, 10) >= fromDate);
-    }
-    if (toDate) {
-      result = result.filter(r => (r.invoiceDate || '').slice(0, 10) <= toDate);
-    }
-    if (status !== 'all') {
-      result = result.filter(r => r.invoiceStatus === status);
-    }
+  const activeCount = items.filter(
+    t => (t as any).status === 'active' || (t as any).status === 'Active',
+  ).length;
 
-    setFiltered(result);
-    setCurrentPage(1);
-  }, [rows, search, fromDate, toDate, status]);
-
-  const kpiData = useMemo(() => {
-    const totalRecords = filtered.length;
-    const totalAmount = filtered.reduce((sum, r) => sum + (r.invoiceAmount || 0), 0);
-    return [
-      {label: 'Total Invoices', value: String(totalRecords), icon: FileText, gradient: ['#10B981', '#16A34A']},
-      {label: 'Total Amount', value: `PKR ${totalAmount.toLocaleString()}`, icon: Wallet, gradient: ['#F59E0B', '#B45309']},
-    ];
-  }, [filtered]);
-
-  const exportExcel = () => {
-    if (filtered.length === 0) {
-      Alert.alert('No data', 'No records to export.');
-      return;
-    }
-    const headers = ['Customer ID', 'Dealer ID', 'CNIC', 'Name', 'Address', 'Balance', 'Invoice Amount', 'Status'];
-    const csvRows = filtered.map(item => [
-      item.subscriberIdentity,
-      item.dealerId || '-',
-      item.cnic,
-      `"${item.name.replace(/"/g, '""')}"`,
-      `"${item.address.replace(/"/g, '""')}"`,
-      String(item.balance || 0),
-      String(item.invoiceAmount || 0),
-      item.invoiceStatus || '',
-    ]);
-    const csvContent = [headers.join(','), ...csvRows.map(r => r.join(','))].join('\n');
-    console.log(csvContent);
-    Alert.alert('Export', `Export ${filtered.length} records as CSV`);
-  };
+  const statCards: {key: string; label: string; value: string; icon: any; gradient: [string, string]}[] = [
+    {key: 'total', label: 'Total Types', value: String(items.length), icon: Shapes, gradient: ['#F59E0B', '#EA580C']},
+    {key: 'active', label: 'Active Types', value: String(activeCount), icon: CheckCircle, gradient: ['#10B981', '#16A34A']},
+    {key: 'categories', label: 'Categories', value: String(items.length), icon: Layers, gradient: ['#3B82F6', '#4F46E5']},
+  ];
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -259,48 +180,86 @@ export default function DealerInvoicesScreen() {
     }
   };
 
-  const renderItem = ({item}: {item: CombinedRow}) => {
-    const statusColor = STATUS_COLORS[item.invoiceStatus] || '#6B7280';
-    return (
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.rowIndex}>#{item.invoiceId.slice(0, 6).toUpperCase()}</Text>
-          <View style={styles.cardInfo}>
-            <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-            <Text style={styles.cardSub}>{item.subscriberIdentity}</Text>
-          </View>
-          <View style={styles.statusBadge(statusColor)}>
-            <Text style={[styles.statusText, {color: statusColor}]}>{item.invoiceStatus}</Text>
-          </View>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Invoice Amount</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>PKR {(item.invoiceAmount || 0).toLocaleString()}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Balance</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>PKR {(item.balance || 0).toLocaleString()}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Billing Period</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{item.invoiceBillingPeriod || 'N/A'}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Due Date</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{item.invoiceDueDate || 'N/A'}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Address</Text>
-          <Text style={styles.infoValue} numberOfLines={2}>{item.address || '-'}</Text>
+  const openAdd = () => {
+    setEditing(null);
+    setName('');
+    setFormOpen(true);
+  };
+
+  const openEdit = (productType: ProductType) => {
+    setEditing(productType);
+    setName(productType.name);
+    setFormOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      Alert.alert('Error', 'Name is required');
+      return;
+    }
+    setSaving(true);
+    try {
+      const payload = {name: name.trim()};
+      if (editing) {
+        await updateProductType(editing.id, payload);
+      } else {
+        await createProductType(payload);
+      }
+      setFormOpen(false);
+      setEditing(null);
+      fetchData(false);
+    } catch (err: any) {
+      const msg =
+        err.response?.data?.message || err.response?.data?.error || 'Failed to save product type';
+      Alert.alert('Error', msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = (productType: ProductType) => {
+    Alert.alert('Delete Product Type', `Delete ${productType.name}?`, [
+      {text: 'Cancel', style: 'cancel'},
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteProductType(productType.id);
+            fetchData(false);
+          } catch (err: any) {
+            const msg =
+              err.response?.data?.message || err.response?.data?.error || 'Failed to delete product type';
+            Alert.alert('Error', msg);
+          }
+        },
+      },
+    ]);
+  };
+
+  const renderItem = ({item, index}: {item: ProductType; index: number}) => (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <Text style={styles.rowIndex}>{index + 1 + (currentPage - 1) * pageSize}</Text>
+        <Text style={styles.cardName} numberOfLines={1}>
+          {item.name}
+        </Text>
+        <View style={styles.cardActions}>
+          <TouchableOpacity style={styles.editBtn} onPress={() => openEdit(item)}>
+            <Pencil size={15} color="#D97706" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(item)}>
+            <Trash2 size={15} color="#DC2626" />
+          </TouchableOpacity>
         </View>
       </View>
-    );
-  };
+    </View>
+  );
 
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#10B981" />
+        <ActivityIndicator size="large" color="#F59E0B" />
       </View>
     );
   }
@@ -312,94 +271,44 @@ export default function DealerInvoicesScreen() {
           <DoorMenuIcon open={drawerStatus === 'open'} />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle}>Dealer Invoices</Text>
+          <Text style={styles.headerTitle}>Product Types</Text>
           <Text style={styles.headerCount}>{filtered.length} total</Text>
         </View>
       </GradientView>
 
       <FlatList
         data={paginated}
-        keyExtractor={item => item.invoiceId}
+        keyExtractor={item => item.id}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} colors={['#10B981']} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} colors={['#F59E0B']} />
         }
         ListHeaderComponent={
           <View>
+            {/* Hero Header */}
             <View style={styles.heroHeader}>
-              <GradientView colors={['#10B981', '#16A34A']} style={styles.heroIconBox}>
-                <FileText size={20} color="#FFFFFF" />
+              <GradientView colors={['#F59E0B', '#EA580C']} style={styles.heroIconBox}>
+                <Shapes size={20} color="#FFFFFF" />
               </GradientView>
               <View style={styles.heroInfo}>
-                <Text style={styles.heroTitle}>Dealers Invoice List</Text>
-                <Text style={styles.heroSubtitle}>View invoices issued by dealers</Text>
+                <Text style={styles.heroTitle}>Product Types</Text>
+                <Text style={styles.heroSubtitle}>
+                  Manage product categories and types.
+                </Text>
               </View>
             </View>
 
-            <InvoicesDivider />
+            <ProductTypesDivider />
 
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.filterRowContainer}>
-              <View style={styles.filterRow}>
-                <View style={styles.filterField}>
-                  <Calendar size={14} color="#6B7280" style={styles.filterIcon} />
-                  <TextInput
-                    style={styles.filterInput}
-                    placeholder="From Date"
-                    placeholderTextColor="#9CA3AF"
-                    value={fromDate}
-                    onChangeText={setFromDate}
-                  />
-                </View>
-                <View style={styles.filterField}>
-                  <Calendar size={14} color="#6B7280" style={styles.filterIcon} />
-                  <TextInput
-                    style={styles.filterInput}
-                    placeholder="To Date"
-                    placeholderTextColor="#9CA3AF"
-                    value={toDate}
-                    onChangeText={setToDate}
-                  />
-                </View>
-                <TouchableOpacity
-                  style={styles.filterSelect}
-                  onPress={() => setSelectSheet({
-                    key: 'status',
-                    title: 'Status',
-                    options: STATUS_OPTIONS,
-                    selected: status,
-                    onSelect: setStatus,
-                  })}>
-                  <Text style={styles.filterSelectText}>
-                    {STATUS_OPTIONS.find(o => o.value === status)?.label || 'Status'}
-                  </Text>
-                  <ChevronDown size={14} color="#6B7280" />
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-
-            <View style={styles.filterActions}>
-              <GradientButton
-                colors={['#10B981', '#16A34A']}
-                style={styles.applyBtn}
-                onPress={() => fetchData(false)}>
-                <Text style={styles.applyBtnText}>Apply Filters</Text>
-              </GradientButton>
-              <TouchableOpacity style={styles.exportBtn} onPress={exportExcel}>
-                <Text style={styles.exportBtnText}>Excel</Text>
-              </TouchableOpacity>
-            </View>
-
+            {/* Stat cards */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.statsRow}>
-              {kpiData.map(card => (
-                <View key={card.label} style={styles.statCard}>
-                  <GradientView colors={card.gradient as [string, string]} style={styles.statIcon}>
+              {statCards.map(card => (
+                <View key={card.key} style={styles.statCard}>
+                  <GradientView colors={card.gradient} style={styles.statIcon}>
                     <card.icon size={18} color="#FFFFFF" />
                   </GradientView>
                   <View>
@@ -410,34 +319,55 @@ export default function DealerInvoicesScreen() {
               ))}
             </ScrollView>
 
+            {/* Search + Add */}
             <View style={styles.toolbar}>
               <View style={styles.searchBox}>
                 <Search size={16} color="#6B7280" />
                 <TextInput
                   style={styles.searchInput}
-                  placeholder="Filter by customer, ID, or CNIC..."
+                  placeholder="Search product types..."
                   placeholderTextColor="#9CA3AF"
                   value={search}
                   onChangeText={setSearch}
                 />
               </View>
+              <GradientButton
+                colors={['#F59E0B', '#EA580C']}
+                style={styles.addBtn}
+                onPress={openAdd}>
+                <PlusCircle size={16} color="#FFFFFF" />
+                <Text style={styles.addBtnText} numberOfLines={1}>
+                  Add Product Type
+                </Text>
+              </GradientButton>
             </View>
           </View>
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>🧾</Text>
-            <Text style={styles.emptyTitle}>No invoices found</Text>
-            <Text style={styles.emptyText}>
-              {search ? 'Try adjusting your search' : 'No invoice records for the selected criteria'}
-            </Text>
-          </View>
+          error ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyIcon}>⚠️</Text>
+              <Text style={styles.emptyTitle}>Failed to load product types</Text>
+              <Text style={styles.emptyText}>{error}</Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={() => fetchData()}>
+                <Text style={styles.retryBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <Text style={styles.emptyIcon}>🏷️</Text>
+              <Text style={styles.emptyTitle}>No product types found</Text>
+              <Text style={styles.emptyText}>
+                {search ? 'Try adjusting your search' : 'Add your first product type'}
+              </Text>
+            </View>
+          )
         }
         ListFooterComponent={
           <View style={styles.pagination}>
             <Text style={styles.paginationInfo}>
               Showing {filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} to{' '}
-              {Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} invoices
+              {Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} product types
             </Text>
 
             <View style={styles.pageControls}>
@@ -445,7 +375,7 @@ export default function DealerInvoicesScreen() {
                 style={[styles.pageBtn, currentPage === 1 && styles.pageBtnDisabled]}
                 disabled={currentPage === 1}
                 onPress={() => setCurrentPage(prev => Math.max(1, prev - 1))}>
-                <ChevronDown size={14} color={currentPage === 1 ? '#D1D5DB' : '#374151'} style={{transform: [{rotate: '270deg'}]}} />
+                <ChevronLeft size={14} color={currentPage === 1 ? '#D1D5DB' : '#374151'} />
                 <Text style={[styles.pageBtnText, currentPage === 1 && styles.pageBtnTextDisabled]}>
                   Previous
                 </Text>
@@ -454,10 +384,7 @@ export default function DealerInvoicesScreen() {
               {getVisiblePages().map(page => (
                 <TouchableOpacity
                   key={page}
-                  style={[
-                    styles.pageNum,
-                    currentPage === page && {backgroundColor: '#10B981'},
-                  ]}
+                  style={[styles.pageNum, currentPage === page && {backgroundColor: '#F59E0B'}]}
                   onPress={() => setCurrentPage(page)}>
                   <Text
                     style={[
@@ -506,7 +433,7 @@ export default function DealerInvoicesScreen() {
                     parseInt(pageInput, 10) > totalPages
                   }
                   onPress={handlePageSubmit}>
-                  <Text style={[{fontSize: 14, color: '#374151'}]}>Go</Text>
+                  <ArrowRight size={14} color="#374151" />
                 </TouchableOpacity>
               </View>
 
@@ -521,7 +448,7 @@ export default function DealerInvoicesScreen() {
                   ]}>
                   Next
                 </Text>
-                <ChevronDown size={14} color={currentPage === totalPages ? '#D1D5DB' : '#374151'} style={{transform: [{rotate: '90deg'}]}} />
+                <ChevronRight size={14} color={currentPage === totalPages ? '#D1D5DB' : '#374151'} />
               </TouchableOpacity>
             </View>
 
@@ -536,6 +463,7 @@ export default function DealerInvoicesScreen() {
         }
       />
 
+      {/* Page size sheet */}
       <Modal
         visible={pageSizeOpen}
         transparent
@@ -563,7 +491,7 @@ export default function DealerInvoicesScreen() {
                   <Text style={[styles.sheetOptionText, active && styles.sheetOptionTextActive]}>
                     {size} per page
                   </Text>
-                  {active ? <Check size={16} color="#10B981" /> : null}
+                  {active ? <Check size={16} color="#F59E0B" /> : null}
                 </TouchableOpacity>
               );
             })}
@@ -571,45 +499,62 @@ export default function DealerInvoicesScreen() {
         </View>
       </Modal>
 
+      {/* Add/Edit Product Type form */}
       <Modal
-        visible={!!selectSheet}
+        visible={formOpen}
         transparent
         animationType="slide"
-        onRequestClose={() => setSelectSheet(null)}>
-        <View style={styles.sheetOverlay}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>{selectSheet?.title}</Text>
-              <TouchableOpacity onPress={() => setSelectSheet(null)}>
+        onRequestClose={() => setFormOpen(false)}>
+        <KeyboardAvoidingView
+          style={styles.formOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.formSheet}>
+            <View style={styles.formSheetHeader}>
+              <View style={styles.formSheetTitleRow}>
+                <GradientView colors={['#F59E0B', '#EA580C']} style={styles.formSheetIcon}>
+                  <Shapes size={16} color="#FFFFFF" />
+                </GradientView>
+                <Text style={styles.formSheetTitle}>
+                  {editing ? 'Edit Product Type' : 'Add New Product Type'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setFormOpen(false)}>
                 <Text style={styles.sheetClose}>✕</Text>
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.sheetScroll}>
-              {selectSheet?.options.map(option => {
-                const active = option.value === selectSheet!.selected;
-                return (
-                  <TouchableOpacity
-                    key={option.value}
-                    style={styles.sheetOption}
-                    onPress={() => {
-                      selectSheet!.onSelect(option.value);
-                      setSelectSheet(null);
-                    }}>
-                    <Text style={[styles.sheetOptionText, active && styles.sheetOptionTextActive]} numberOfLines={1}>
-                      {option.label}
-                    </Text>
-                    {active ? <Check size={16} color="#10B981" /> : null}
-                  </TouchableOpacity>
-                );
-              })}
-              {selectSheet && selectSheet.options.length === 0 ? (
-                <View style={styles.sheetEmpty}>
-                  <Text style={styles.sheetEmptyText}>No options available</Text>
-                </View>
-              ) : null}
-            </ScrollView>
+            <View style={styles.formBody}>
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Name *</Text>
+                <TextInput
+                  style={styles.formInput}
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="e.g., Raw Material"
+                  placeholderTextColor="#9CA3AF"
+                />
+              </View>
+              <View style={styles.formActions}>
+                <TouchableOpacity
+                  style={styles.cancelBtn}
+                  onPress={() => setFormOpen(false)}
+                  disabled={saving}>
+                  <Text style={styles.cancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <GradientButton
+                  colors={['#10B981', '#16A34A']}
+                  style={styles.saveBtn}
+                  onPress={handleSave}
+                  disabled={saving}>
+                  {saving ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.saveBtnText}>{editing ? 'Update' : 'Save'}</Text>
+                  )}
+                </GradientButton>
+              </View>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -687,7 +632,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginRight: 10,
-    minWidth: 150,
+    minWidth: 170,
   },
   statIcon: {
     width: 38,
@@ -702,74 +647,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   statLabel: {fontSize: 11, color: '#6B7280', fontWeight: '500'},
-  statValue: {fontSize: 18, fontWeight: '700', color: '#111827'},
-  filterRowContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'center',
-  },
-  filterField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 12,
-    height: 42,
-    flex: 1,
-    minWidth: 110,
-  },
-  filterIcon: {marginRight: 6},
-  filterInput: {flex: 1, paddingVertical: 8, fontSize: 13, color: '#111827'},
-  filterSelect: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 12,
-    height: 42,
-    flex: 1,
-    minWidth: 110,
-    justifyContent: 'space-between',
-  },
-  filterSelectText: {flex: 1, fontSize: 13, color: '#111827', marginRight: 4},
-  filterActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    gap: 8,
-  },
-  applyBtn: {
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    flexShrink: 0,
-    shadowOffset: {width: 0, height: 3},
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  applyBtnText: {color: '#FFFFFF', fontSize: 13, fontWeight: '600'},
-  exportBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    gap: 4,
-  },
-  exportBtnText: {fontSize: 13, color: '#166534', fontWeight: '600'},
+  statValue: {fontSize: 20, fontWeight: '700', color: '#111827'},
   toolbar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -788,36 +666,62 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   searchInput: {flex: 1, paddingVertical: 10, fontSize: 14, color: '#111827', marginLeft: 8},
+  addBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexShrink: 0,
+    shadowOffset: {width: 0, height: 3},
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  addBtnText: {color: '#FFFFFF', fontSize: 13, fontWeight: '600', marginLeft: 6},
   list: {paddingHorizontal: 16, paddingTop: 12, paddingBottom: 30},
   card: {
     backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, marginBottom: 10,
     borderWidth: 1, borderColor: '#E5E7EB',
   },
-  cardHeader: {flexDirection: 'row', alignItems: 'center', marginBottom: 8},
+  cardHeader: {flexDirection: 'row', alignItems: 'center'},
   rowIndex: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#10B981',
+    color: '#F59E0B',
     marginRight: 10,
     fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}),
   },
-  cardInfo: {flex: 1},
-  cardName: {fontSize: 15, fontWeight: '600', color: '#111827'},
-  cardSub: {fontSize: 12, color: '#6B7280', marginTop: 2},
-  statusBadge: (color: string) => ({
-    backgroundColor: `${color}20`,
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  }),
-  statusText: {fontSize: 11, fontWeight: '600'},
-  infoRow: {flexDirection: 'row', paddingVertical: 5},
-  infoLabel: {fontSize: 12, color: '#9CA3AF', width: 120},
-  infoValue: {flex: 1, fontSize: 13, color: '#374151', fontWeight: '500'},
+  cardName: {flex: 1, fontSize: 15, fontWeight: '600', color: '#111827'},
+  cardActions: {flexDirection: 'row', gap: 8},
+  editBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FEF3C7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   empty: {alignItems: 'center', paddingVertical: 40},
   emptyIcon: {fontSize: 48, marginBottom: 12},
   emptyTitle: {fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 4},
-  emptyText: {fontSize: 13, color: '#6B7280'},
+  emptyText: {fontSize: 13, color: '#6B7280', textAlign: 'center'},
+  retryBtn: {
+    marginTop: 14,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#F59E0B',
+  },
+  retryBtnText: {color: '#FFFFFF', fontSize: 14, fontWeight: '600'},
   pagination: {paddingTop: 6},
   paginationInfo: {fontSize: 13, color: '#6B7280', marginBottom: 10},
   pageControls: {flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap'},
@@ -908,7 +812,6 @@ const styles = StyleSheet.create({
   },
   sheetTitle: {fontSize: 16, fontWeight: '600', color: '#111827'},
   sheetClose: {fontSize: 16, color: '#6B7280', padding: 4},
-  sheetScroll: {paddingBottom: 20},
   sheetOption: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -918,8 +821,64 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
-  sheetOptionText: {fontSize: 15, color: '#374151', fontWeight: '500', flex: 1, marginRight: 8},
-  sheetOptionTextActive: {color: '#10B981', fontWeight: '600'},
-  sheetEmpty: {paddingVertical: 30, alignItems: 'center'},
-  sheetEmptyText: {fontSize: 13, color: '#9CA3AF'},
+  sheetOptionText: {fontSize: 15, color: '#374151', fontWeight: '500'},
+  sheetOptionTextActive: {color: '#F59E0B', fontWeight: '600'},
+  formOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  formSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '92%',
+  },
+  formSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  formSheetTitleRow: {flexDirection: 'row', alignItems: 'center'},
+  formSheetIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  formSheetTitle: {fontSize: 16, fontWeight: '600', color: '#111827'},
+  formBody: {paddingHorizontal: 20, paddingTop: 16, paddingBottom: 30},
+  formGroup: {marginBottom: 14},
+  formLabel: {fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 6},
+  formInput: {
+    backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB',
+    paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, color: '#111827',
+  },
+  formActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 4,
+  },
+  cancelBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    backgroundColor: '#FFFFFF',
+  },
+  cancelBtnText: {fontSize: 14, color: '#DC2626', fontWeight: '600'},
+  saveBtn: {
+    borderRadius: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  saveBtnText: {color: '#FFFFFF', fontSize: 14, fontWeight: '600'},
 });

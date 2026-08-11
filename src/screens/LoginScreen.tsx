@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import {useAuth} from '../context/AuthContext';
+import {Eye, EyeOff} from 'lucide-react-native';
 
 export default function LoginScreen({navigation}: any) {
   const {login} = useAuth();
@@ -94,7 +95,11 @@ export default function LoginScreen({navigation}: any) {
                 <TouchableOpacity
                   style={styles.eyeButton}
                   onPress={() => setShowPassword(!showPassword)}>
-                  <Text style={styles.eyeText}>{showPassword ? '🙈' : '👁'}</Text>
+                  {showPassword ? (
+                    <EyeOff size={20} color="#6B7280" />
+                  ) : (
+                    <Eye size={20} color="#6B7280" />
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
@@ -218,9 +223,6 @@ const styles = StyleSheet.create({
   eyeButton: {
     paddingHorizontal: 14,
     paddingVertical: 12,
-  },
-  eyeText: {
-    fontSize: 18,
   },
   button: {
     backgroundColor: '#1F2937',

@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
-  Alert,
   Modal,
   ScrollView,
   Animated,
@@ -18,53 +17,21 @@ import {useFocusEffect, useNavigation, DrawerActions} from '@react-navigation/na
 import {useDrawerStatus} from '@react-navigation/drawer';
 import Svg, {Rect, Defs, LinearGradient, Stop} from 'react-native-svg';
 import {
-  FileText,
+  Boxes,
+  Package,
+  DollarSign,
   Search,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ArrowRight,
   Check,
-  Calendar,
-  Wallet,
 } from 'lucide-react-native';
-import {getBillingInvoices, getBillingSubscribers} from '../../api/subscribers';
-import {Invoice, Subscriber} from '../../types';
-import {GradientButton} from '../../components/GradientButton';
+import {getPurchasedProducts} from '../../api/inventory';
+import {PurchasedProduct} from '../../types';
 import {GradientView} from '../../components/GradientView';
 
-const PAGE_SIZES = [10, 20, 50, 100];
-
-type FilterOption = {label: string; value: string};
-
-const STATUS_OPTIONS: FilterOption[] = [
-  {label: 'All Statuses', value: 'all'},
-  {label: 'Paid', value: 'paid'},
-  {label: 'Pending', value: 'pending'},
-  {label: 'Overdue', value: 'overdue'},
-  {label: 'Draft', value: 'draft'},
-];
-
-interface CombinedRow {
-  subscriberId: string;
-  subscriberIdentity: string;
-  dealerId: string | null;
-  cnic: string;
-  name: string;
-  address: string;
-  balance: number;
-  invoiceId: string;
-  invoiceAmount: number;
-  invoiceDueDate: string;
-  invoiceStatus: string;
-  invoiceBillingPeriod: string;
-  invoiceDate: string;
-}
-
-type SelectSheetState = {
-  key: string;
-  title: string;
-  options: FilterOption[];
-  selected: string;
-  onSelect: (v: string) => void;
-} | null;
+const PAGE_SIZES = [5, 10, 20, 50, 100];
 
 function DoorMenuIcon({open}: {open: boolean}) {
   const slide = useRef(new Animated.Value(open ? 1 : 0)).current;
@@ -89,47 +56,36 @@ function DoorMenuIcon({open}: {open: boolean}) {
   );
 }
 
-function InvoicesDivider() {
+function StockDivider() {
   return (
     <View style={styles.heroDivider}>
       <Svg height="2" width="100%">
         <Defs>
-          <LinearGradient id="invoicesHeroGrad" x1="0" y1="0" x2="1" y2="0">
-            <Stop offset="0" stopColor="#10B981" stopOpacity="1" />
-            <Stop offset="0.7" stopColor="#16A34A" stopOpacity="0.6" />
-            <Stop offset="1" stopColor="#16A34A" stopOpacity="0" />
+          <LinearGradient id="stockHeroGrad" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor="#14B8A6" stopOpacity="1" />
+            <Stop offset="0.7" stopColor="#059669" stopOpacity="0.6" />
+            <Stop offset="1" stopColor="#059669" stopOpacity="0" />
           </LinearGradient>
         </Defs>
-        <Rect x="0" y="0" width="100%" height="2" fill="url(#invoicesHeroGrad)" />
+        <Rect x="0" y="0" width="100%" height="2" fill="url(#stockHeroGrad)" />
       </Svg>
     </View>
   );
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  paid: '#10B981',
-  pending: '#F59E0B',
-  overdue: '#EF4444',
-  draft: '#6B7280',
-};
-
-export default function DealerInvoicesScreen() {
+export default function StockScreen() {
   const nav = useNavigation();
   const drawerStatus = useDrawerStatus();
-
-  const [rows, setRows] = useState<CombinedRow[]>([]);
-  const [filtered, setFiltered] = useState<CombinedRow[]>([]);
+  const [items, setItems] = useState<PurchasedProduct[]>([]);
+  const [filtered, setFiltered] = useState<PurchasedProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
-  const [status, setStatus] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [pageInput, setPageInput] = useState('');
   const [pageSizeOpen, setPageSizeOpen] = useState(false);
-  const [selectSheet, setSelectSheet] = useState<SelectSheetState>(null);
 
   const openDrawer = () => {
     nav.dispatch(DrawerActions.openDrawer());
@@ -142,101 +98,62 @@ export default function DealerInvoicesScreen() {
       } else {
         setLoading(true);
       }
-      const [subscribers, invoices] = await Promise.all([
-        getBillingSubscribers().catch(() => []),
-        getBillingInvoices().catch(() => []),
-      ]);
-
-      const subscriberMap = new Map<string, Subscriber>();
-      subscribers.forEach(s => subscriberMap.set(s.id, s));
-
-      const combined: CombinedRow[] = (invoices || []).map((inv: Invoice) => {
-        const sub = subscriberMap.get(inv.subscriberId);
-        return {
-          subscriberId: sub?.id || inv.subscriberId,
-          subscriberIdentity: sub?.subscriber_identity || inv.subscriberId.slice(0, 8),
-          dealerId: sub?.dealerId || null,
-          cnic: sub?.cnic || '-',
-          name: sub?.name || inv.subscriberName || '-',
-          address: sub?.installationAddress || '-',
-          balance: sub?.balance ?? 0,
-          invoiceId: inv.id,
-          invoiceAmount: inv.amount || 0,
-          invoiceDueDate: inv.dueDate,
-          invoiceStatus: inv.status,
-          invoiceBillingPeriod: inv.billingPeriod || '',
-          invoiceDate: inv.createdAt || '',
-        };
-      });
-
-      setRows(combined);
-    } catch {
-      Alert.alert('Error', 'Failed to load invoices');
+      setError(null);
+      const data = await getPurchasedProducts();
+      setItems(data);
+      setFiltered(data);
+    } catch (err: any) {
+      const reason =
+        err.response?.data?.error ||
+        err.response?.data?.message ||
+        'Failed to load stock. Check your connection and try again.';
+      setError(reason);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useFocusEffect(useCallback(() => {fetchData();}, [fetchData]));
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fetchData]),
+  );
 
   useEffect(() => {
-    let result = rows;
+    setCurrentPage(1);
+  }, [search]);
 
+  useEffect(() => {
     if (search.trim()) {
       const q = search.toLowerCase();
-      result = result.filter(
-        r =>
-          (r.subscriberIdentity || '').toLowerCase().includes(q) ||
-          (r.name || '').toLowerCase().includes(q) ||
-          (r.cnic || '').toLowerCase().includes(q) ||
-          (r.invoiceBillingPeriod || '').toLowerCase().includes(q),
+      setFiltered(
+        items.filter(
+          i =>
+            i.name.toLowerCase().includes(q) ||
+            (i.vendorName || '').toLowerCase().includes(q) ||
+            (i.serialNumber || '').toLowerCase().includes(q) ||
+            (i.batch || '').toLowerCase().includes(q),
+        ),
       );
+    } else {
+      setFiltered(items);
     }
+  }, [search, items]);
 
-    if (fromDate) {
-      result = result.filter(r => (r.invoiceDate || '').slice(0, 10) >= fromDate);
-    }
-    if (toDate) {
-      result = result.filter(r => (r.invoiceDate || '').slice(0, 10) <= toDate);
-    }
-    if (status !== 'all') {
-      result = result.filter(r => r.invoiceStatus === status);
-    }
+  const totalItems = items.length;
+  const totalStock = items.reduce((sum, i) => sum + (Number(i.stock) || 0), 0);
+  const totalValue = items.reduce(
+    (sum, i) => sum + (Number(i.stock) || 0) * (Number(i.price || i.purchasePrice) || 0),
+    0,
+  );
 
-    setFiltered(result);
-    setCurrentPage(1);
-  }, [rows, search, fromDate, toDate, status]);
-
-  const kpiData = useMemo(() => {
-    const totalRecords = filtered.length;
-    const totalAmount = filtered.reduce((sum, r) => sum + (r.invoiceAmount || 0), 0);
-    return [
-      {label: 'Total Invoices', value: String(totalRecords), icon: FileText, gradient: ['#10B981', '#16A34A']},
-      {label: 'Total Amount', value: `PKR ${totalAmount.toLocaleString()}`, icon: Wallet, gradient: ['#F59E0B', '#B45309']},
-    ];
-  }, [filtered]);
-
-  const exportExcel = () => {
-    if (filtered.length === 0) {
-      Alert.alert('No data', 'No records to export.');
-      return;
-    }
-    const headers = ['Customer ID', 'Dealer ID', 'CNIC', 'Name', 'Address', 'Balance', 'Invoice Amount', 'Status'];
-    const csvRows = filtered.map(item => [
-      item.subscriberIdentity,
-      item.dealerId || '-',
-      item.cnic,
-      `"${item.name.replace(/"/g, '""')}"`,
-      `"${item.address.replace(/"/g, '""')}"`,
-      String(item.balance || 0),
-      String(item.invoiceAmount || 0),
-      item.invoiceStatus || '',
-    ]);
-    const csvContent = [headers.join(','), ...csvRows.map(r => r.join(','))].join('\n');
-    console.log(csvContent);
-    Alert.alert('Export', `Export ${filtered.length} records as CSV`);
-  };
+  const statCards: {key: string; label: string; value: string; icon: any; gradient: [string, string]}[] = [
+    {key: 'items', label: 'Total Items', value: String(totalItems), icon: Boxes, gradient: ['#14B8A6', '#059669']},
+    {key: 'stock', label: 'Total Stock', value: String(totalStock), icon: Package, gradient: ['#3B82F6', '#0891B2']},
+    {key: 'value', label: 'Total Value', value: `PKR ${totalValue.toLocaleString()}`, icon: DollarSign, gradient: ['#8B5CF6', '#7C3AED']},
+  ];
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -259,39 +176,49 @@ export default function DealerInvoicesScreen() {
     }
   };
 
-  const renderItem = ({item}: {item: CombinedRow}) => {
-    const statusColor = STATUS_COLORS[item.invoiceStatus] || '#6B7280';
+  const renderItem = ({item, index}: {item: PurchasedProduct; index: number}) => {
+    const stock = Number(item.stock) || 0;
+    const stockBadge =
+      stock > 10
+        ? {bg: '#10B981', color: '#FFFFFF'}
+        : stock > 0
+        ? {bg: '#D1FAE5', color: '#047857'}
+        : {bg: '#FEE2E2', color: '#DC2626'};
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <Text style={styles.rowIndex}>#{item.invoiceId.slice(0, 6).toUpperCase()}</Text>
-          <View style={styles.cardInfo}>
-            <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-            <Text style={styles.cardSub}>{item.subscriberIdentity}</Text>
+          <Text style={styles.rowIndex}>{index + 1 + (currentPage - 1) * pageSize}</Text>
+          <Text style={styles.cardName} numberOfLines={2}>
+            {item.name}
+          </Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Vendor</Text>
+          <Text style={styles.infoValue} numberOfLines={1}>{item.vendorName || '-'}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Purchase Date</Text>
+          <Text style={styles.infoValue} numberOfLines={1}>{item.purchaseDate || '-'}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>Batch</Text>
+          <Text style={styles.infoValue} numberOfLines={1}>{item.batch || '-'}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoLabel}>SN / MAC</Text>
+          <Text style={styles.infoValueMono} numberOfLines={1}>{item.serialNumber || '-'}</Text>
+        </View>
+        <View style={styles.cardFooter}>
+          <View
+            style={[styles.stockBadge, {backgroundColor: stockBadge.bg}]}>
+            <Text style={[styles.stockBadgeText, {color: stockBadge.color}]}>
+              {stock > 0 ? `${stock} in stock` : 'Out of stock'}
+            </Text>
           </View>
-          <View style={styles.statusBadge(statusColor)}>
-            <Text style={[styles.statusText, {color: statusColor}]}>{item.invoiceStatus}</Text>
+          <View style={styles.priceBox}>
+            <Text style={styles.priceLabel}>Price</Text>
+            <Text style={styles.priceValue}>PKR {(Number(item.price) || 0).toLocaleString()}</Text>
           </View>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Invoice Amount</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>PKR {(item.invoiceAmount || 0).toLocaleString()}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Balance</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>PKR {(item.balance || 0).toLocaleString()}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Billing Period</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{item.invoiceBillingPeriod || 'N/A'}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Due Date</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{item.invoiceDueDate || 'N/A'}</Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Address</Text>
-          <Text style={styles.infoValue} numberOfLines={2}>{item.address || '-'}</Text>
         </View>
       </View>
     );
@@ -300,7 +227,7 @@ export default function DealerInvoicesScreen() {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#10B981" />
+        <ActivityIndicator size="large" color="#14B8A6" />
       </View>
     );
   }
@@ -312,110 +239,63 @@ export default function DealerInvoicesScreen() {
           <DoorMenuIcon open={drawerStatus === 'open'} />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
-          <Text style={styles.headerTitle}>Dealer Invoices</Text>
+          <Text style={styles.headerTitle}>Stock</Text>
           <Text style={styles.headerCount}>{filtered.length} total</Text>
         </View>
       </GradientView>
 
       <FlatList
         data={paginated}
-        keyExtractor={item => item.invoiceId}
+        keyExtractor={item => item.purchaseItemId || item.id}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} colors={['#10B981']} />
+          <RefreshControl refreshing={refreshing} onRefresh={() => fetchData(true)} colors={['#14B8A6']} />
         }
         ListHeaderComponent={
           <View>
+            {/* Hero Header */}
             <View style={styles.heroHeader}>
-              <GradientView colors={['#10B981', '#16A34A']} style={styles.heroIconBox}>
-                <FileText size={20} color="#FFFFFF" />
+              <GradientView colors={['#14B8A6', '#059669']} style={styles.heroIconBox}>
+                <Boxes size={20} color="#FFFFFF" />
               </GradientView>
               <View style={styles.heroInfo}>
-                <Text style={styles.heroTitle}>Dealers Invoice List</Text>
-                <Text style={styles.heroSubtitle}>View invoices issued by dealers</Text>
+                <Text style={styles.heroTitle}>Stock</Text>
+                <Text style={styles.heroSubtitle}>
+                  View all products purchased and their current stock.
+                </Text>
               </View>
             </View>
 
-            <InvoicesDivider />
+            <StockDivider />
 
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.filterRowContainer}>
-              <View style={styles.filterRow}>
-                <View style={styles.filterField}>
-                  <Calendar size={14} color="#6B7280" style={styles.filterIcon} />
-                  <TextInput
-                    style={styles.filterInput}
-                    placeholder="From Date"
-                    placeholderTextColor="#9CA3AF"
-                    value={fromDate}
-                    onChangeText={setFromDate}
-                  />
-                </View>
-                <View style={styles.filterField}>
-                  <Calendar size={14} color="#6B7280" style={styles.filterIcon} />
-                  <TextInput
-                    style={styles.filterInput}
-                    placeholder="To Date"
-                    placeholderTextColor="#9CA3AF"
-                    value={toDate}
-                    onChangeText={setToDate}
-                  />
-                </View>
-                <TouchableOpacity
-                  style={styles.filterSelect}
-                  onPress={() => setSelectSheet({
-                    key: 'status',
-                    title: 'Status',
-                    options: STATUS_OPTIONS,
-                    selected: status,
-                    onSelect: setStatus,
-                  })}>
-                  <Text style={styles.filterSelectText}>
-                    {STATUS_OPTIONS.find(o => o.value === status)?.label || 'Status'}
-                  </Text>
-                  <ChevronDown size={14} color="#6B7280" />
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-
-            <View style={styles.filterActions}>
-              <GradientButton
-                colors={['#10B981', '#16A34A']}
-                style={styles.applyBtn}
-                onPress={() => fetchData(false)}>
-                <Text style={styles.applyBtnText}>Apply Filters</Text>
-              </GradientButton>
-              <TouchableOpacity style={styles.exportBtn} onPress={exportExcel}>
-                <Text style={styles.exportBtnText}>Excel</Text>
-              </TouchableOpacity>
-            </View>
-
+            {/* Stat cards */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.statsRow}>
-              {kpiData.map(card => (
-                <View key={card.label} style={styles.statCard}>
-                  <GradientView colors={card.gradient as [string, string]} style={styles.statIcon}>
+              {statCards.map(card => (
+                <View key={card.key} style={styles.statCard}>
+                  <GradientView colors={card.gradient} style={styles.statIcon}>
                     <card.icon size={18} color="#FFFFFF" />
                   </GradientView>
-                  <View>
+                  <View style={styles.statInfo}>
                     <Text style={styles.statLabel}>{card.label}</Text>
-                    <Text style={styles.statValue}>{card.value}</Text>
+                    <Text style={styles.statValue} numberOfLines={1}>
+                      {card.value}
+                    </Text>
                   </View>
                 </View>
               ))}
             </ScrollView>
 
+            {/* Search */}
             <View style={styles.toolbar}>
               <View style={styles.searchBox}>
                 <Search size={16} color="#6B7280" />
                 <TextInput
                   style={styles.searchInput}
-                  placeholder="Filter by customer, ID, or CNIC..."
+                  placeholder="Filter by product, vendor, or SN/MAC..."
                   placeholderTextColor="#9CA3AF"
                   value={search}
                   onChangeText={setSearch}
@@ -425,19 +305,30 @@ export default function DealerInvoicesScreen() {
           </View>
         }
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>🧾</Text>
-            <Text style={styles.emptyTitle}>No invoices found</Text>
-            <Text style={styles.emptyText}>
-              {search ? 'Try adjusting your search' : 'No invoice records for the selected criteria'}
-            </Text>
-          </View>
+          error ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyIcon}>⚠️</Text>
+              <Text style={styles.emptyTitle}>Failed to load stock</Text>
+              <Text style={styles.emptyText}>{error}</Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={() => fetchData()}>
+                <Text style={styles.retryBtnText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <Text style={styles.emptyIcon}>📦</Text>
+              <Text style={styles.emptyTitle}>No stock found</Text>
+              <Text style={styles.emptyText}>
+                {search ? 'Try adjusting your search' : 'No purchased products available'}
+              </Text>
+            </View>
+          )
         }
         ListFooterComponent={
           <View style={styles.pagination}>
             <Text style={styles.paginationInfo}>
               Showing {filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} to{' '}
-              {Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} invoices
+              {Math.min(currentPage * pageSize, filtered.length)} of {filtered.length} items
             </Text>
 
             <View style={styles.pageControls}>
@@ -445,7 +336,7 @@ export default function DealerInvoicesScreen() {
                 style={[styles.pageBtn, currentPage === 1 && styles.pageBtnDisabled]}
                 disabled={currentPage === 1}
                 onPress={() => setCurrentPage(prev => Math.max(1, prev - 1))}>
-                <ChevronDown size={14} color={currentPage === 1 ? '#D1D5DB' : '#374151'} style={{transform: [{rotate: '270deg'}]}} />
+                <ChevronLeft size={14} color={currentPage === 1 ? '#D1D5DB' : '#374151'} />
                 <Text style={[styles.pageBtnText, currentPage === 1 && styles.pageBtnTextDisabled]}>
                   Previous
                 </Text>
@@ -454,10 +345,7 @@ export default function DealerInvoicesScreen() {
               {getVisiblePages().map(page => (
                 <TouchableOpacity
                   key={page}
-                  style={[
-                    styles.pageNum,
-                    currentPage === page && {backgroundColor: '#10B981'},
-                  ]}
+                  style={[styles.pageNum, currentPage === page && {backgroundColor: '#14B8A6'}]}
                   onPress={() => setCurrentPage(page)}>
                   <Text
                     style={[
@@ -506,7 +394,7 @@ export default function DealerInvoicesScreen() {
                     parseInt(pageInput, 10) > totalPages
                   }
                   onPress={handlePageSubmit}>
-                  <Text style={[{fontSize: 14, color: '#374151'}]}>Go</Text>
+                  <ArrowRight size={14} color="#374151" />
                 </TouchableOpacity>
               </View>
 
@@ -521,7 +409,7 @@ export default function DealerInvoicesScreen() {
                   ]}>
                   Next
                 </Text>
-                <ChevronDown size={14} color={currentPage === totalPages ? '#D1D5DB' : '#374151'} style={{transform: [{rotate: '90deg'}]}} />
+                <ChevronRight size={14} color={currentPage === totalPages ? '#D1D5DB' : '#374151'} />
               </TouchableOpacity>
             </View>
 
@@ -536,6 +424,7 @@ export default function DealerInvoicesScreen() {
         }
       />
 
+      {/* Page size sheet */}
       <Modal
         visible={pageSizeOpen}
         transparent
@@ -563,51 +452,10 @@ export default function DealerInvoicesScreen() {
                   <Text style={[styles.sheetOptionText, active && styles.sheetOptionTextActive]}>
                     {size} per page
                   </Text>
-                  {active ? <Check size={16} color="#10B981" /> : null}
+                  {active ? <Check size={16} color="#14B8A6" /> : null}
                 </TouchableOpacity>
               );
             })}
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={!!selectSheet}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setSelectSheet(null)}>
-        <View style={styles.sheetOverlay}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>{selectSheet?.title}</Text>
-              <TouchableOpacity onPress={() => setSelectSheet(null)}>
-                <Text style={styles.sheetClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.sheetScroll}>
-              {selectSheet?.options.map(option => {
-                const active = option.value === selectSheet!.selected;
-                return (
-                  <TouchableOpacity
-                    key={option.value}
-                    style={styles.sheetOption}
-                    onPress={() => {
-                      selectSheet!.onSelect(option.value);
-                      setSelectSheet(null);
-                    }}>
-                    <Text style={[styles.sheetOptionText, active && styles.sheetOptionTextActive]} numberOfLines={1}>
-                      {option.label}
-                    </Text>
-                    {active ? <Check size={16} color="#10B981" /> : null}
-                  </TouchableOpacity>
-                );
-              })}
-              {selectSheet && selectSheet.options.length === 0 ? (
-                <View style={styles.sheetEmpty}>
-                  <Text style={styles.sheetEmptyText}>No options available</Text>
-                </View>
-              ) : null}
-            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -687,7 +535,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginRight: 10,
-    minWidth: 150,
+    minWidth: 185,
   },
   statIcon: {
     width: 38,
@@ -701,81 +549,14 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
+  statInfo: {flex: 1},
   statLabel: {fontSize: 11, color: '#6B7280', fontWeight: '500'},
   statValue: {fontSize: 18, fontWeight: '700', color: '#111827'},
-  filterRowContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'center',
-  },
-  filterField: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 12,
-    height: 42,
-    flex: 1,
-    minWidth: 110,
-  },
-  filterIcon: {marginRight: 6},
-  filterInput: {flex: 1, paddingVertical: 8, fontSize: 13, color: '#111827'},
-  filterSelect: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    paddingHorizontal: 12,
-    height: 42,
-    flex: 1,
-    minWidth: 110,
-    justifyContent: 'space-between',
-  },
-  filterSelectText: {flex: 1, fontSize: 13, color: '#111827', marginRight: 4},
-  filterActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    gap: 8,
-  },
-  applyBtn: {
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    flexShrink: 0,
-    shadowOffset: {width: 0, height: 3},
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  applyBtnText: {color: '#FFFFFF', fontSize: 13, fontWeight: '600'},
-  exportBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    gap: 4,
-  },
-  exportBtnText: {fontSize: 13, color: '#166534', fontWeight: '600'},
   toolbar: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 14,
-    gap: 8,
   },
   searchBox: {
     flex: 1,
@@ -793,31 +574,43 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF', borderRadius: 12, padding: 14, marginBottom: 10,
     borderWidth: 1, borderColor: '#E5E7EB',
   },
-  cardHeader: {flexDirection: 'row', alignItems: 'center', marginBottom: 8},
+  cardHeader: {flexDirection: 'row', alignItems: 'center', marginBottom: 6},
   rowIndex: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#10B981',
+    color: '#14B8A6',
     marginRight: 10,
     fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}),
   },
-  cardInfo: {flex: 1},
-  cardName: {fontSize: 15, fontWeight: '600', color: '#111827'},
-  cardSub: {fontSize: 12, color: '#6B7280', marginTop: 2},
-  statusBadge: (color: string) => ({
-    backgroundColor: `${color}20`,
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  }),
-  statusText: {fontSize: 11, fontWeight: '600'},
+  cardName: {flex: 1, fontSize: 15, fontWeight: '600', color: '#111827'},
   infoRow: {flexDirection: 'row', paddingVertical: 5},
-  infoLabel: {fontSize: 12, color: '#9CA3AF', width: 120},
+  infoLabel: {fontSize: 12, color: '#9CA3AF', width: 105},
   infoValue: {flex: 1, fontSize: 13, color: '#374151', fontWeight: '500'},
+  infoValueMono: {
+    flex: 1, fontSize: 12, color: '#374151', fontWeight: '500',
+    fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}),
+  },
+  cardFooter: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 10, marginTop: 6,
+  },
+  stockBadge: {paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8},
+  stockBadgeText: {fontSize: 11, fontWeight: '600'},
+  priceBox: {alignItems: 'flex-end'},
+  priceLabel: {fontSize: 11, color: '#9CA3AF'},
+  priceValue: {fontSize: 14, fontWeight: '700', color: '#111827'},
   empty: {alignItems: 'center', paddingVertical: 40},
   emptyIcon: {fontSize: 48, marginBottom: 12},
   emptyTitle: {fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 4},
-  emptyText: {fontSize: 13, color: '#6B7280'},
+  emptyText: {fontSize: 13, color: '#6B7280', textAlign: 'center'},
+  retryBtn: {
+    marginTop: 14,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#14B8A6',
+  },
+  retryBtnText: {color: '#FFFFFF', fontSize: 14, fontWeight: '600'},
   pagination: {paddingTop: 6},
   paginationInfo: {fontSize: 13, color: '#6B7280', marginBottom: 10},
   pageControls: {flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap'},
@@ -908,7 +701,6 @@ const styles = StyleSheet.create({
   },
   sheetTitle: {fontSize: 16, fontWeight: '600', color: '#111827'},
   sheetClose: {fontSize: 16, color: '#6B7280', padding: 4},
-  sheetScroll: {paddingBottom: 20},
   sheetOption: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -918,8 +710,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
-  sheetOptionText: {fontSize: 15, color: '#374151', fontWeight: '500', flex: 1, marginRight: 8},
-  sheetOptionTextActive: {color: '#10B981', fontWeight: '600'},
-  sheetEmpty: {paddingVertical: 30, alignItems: 'center'},
-  sheetEmptyText: {fontSize: 13, color: '#9CA3AF'},
+  sheetOptionText: {fontSize: 15, color: '#374151', fontWeight: '500'},
+  sheetOptionTextActive: {color: '#14B8A6', fontWeight: '600'},
 });

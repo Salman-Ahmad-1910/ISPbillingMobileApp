@@ -26,17 +26,36 @@ import {
   Check,
   Edit,
   Trash2,
+  Calendar,
+  Download,
+  Printer,
+  Wallet,
 } from 'lucide-react-native';
 import {useAuth} from '../../context/AuthContext';
 import {getDealerCollections, deleteDealerCollection, createDealerCollection, updateDealerCollection} from '../../api/collections';
 import {getDealers} from '../../api/dealers';
-import {Dealer, DealerCollection} from '../../types';
+import {areasApi} from '../../api/network';
+import {Area, Dealer, DealerCollection} from '../../types';
 import {GradientButton} from '../../components/GradientButton';
 import {GradientView} from '../../components/GradientView';
 
 const PAGE_SIZES = [5, 10, 20, 50, 100];
 
 type FilterOption = {label: string; value: string};
+
+const REPORT_TYPE_OPTIONS: FilterOption[] = [
+  {label: 'All', value: 'all'},
+  {label: 'Settled', value: 'settled'},
+  {label: 'Pending', value: 'pending'},
+];
+
+const TRANSACTION_TYPE_FILTER_OPTIONS: FilterOption[] = [
+  {label: 'All Types', value: 'all'},
+  {label: 'Cash', value: 'cash'},
+  {label: 'Bank', value: 'bank'},
+  {label: 'Easypaisa', value: 'easypaisa'},
+  {label: 'JazzCash', value: 'jazzcash'},
+];
 
 interface CollectionFormValues {
   dealerId: string;
@@ -139,6 +158,13 @@ export default function CollectionsScreen() {
   const [saving, setSaving] = useState(false);
   const [selectSheet, setSelectSheet] = useState<SelectSheetState>(null);
 
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [reportType, setReportType] = useState('all');
+  const [selectedLocality, setSelectedLocality] = useState('all');
+  const [selectedTransactionType, setSelectedTransactionType] = useState('all');
+
   const openDrawer = () => {
     nav.dispatch(DrawerActions.openDrawer());
   };
@@ -150,12 +176,14 @@ export default function CollectionsScreen() {
       } else {
         setLoading(true);
       }
-      const [collectionData, dealerData] = await Promise.all([
+      const [collectionData, dealerData, areaData] = await Promise.all([
         getDealerCollections().catch(() => []),
         getDealers().catch(() => []),
+        areasApi.list().catch(() => []),
       ]);
       setCollections(collectionData);
       setDealers(dealerData);
+      setAreas(areaData);
     } catch {
       Alert.alert('Error', 'Failed to load collections');
     } finally {
@@ -168,6 +196,7 @@ export default function CollectionsScreen() {
 
   useEffect(() => {
     let result = collections;
+
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(
@@ -177,27 +206,70 @@ export default function CollectionsScreen() {
           (c.transactionType || '').toLowerCase().includes(q),
       );
     }
+
+    if (fromDate) {
+      result = result.filter(c => (c.collectionDate || '').slice(0, 10) >= fromDate);
+    }
+    if (toDate) {
+      result = result.filter(c => (c.collectionDate || '').slice(0, 10) <= toDate);
+    }
+    if (reportType !== 'all') {
+      result = result.filter(c => c.settlementStatus === reportType);
+    }
+    if (selectedTransactionType !== 'all') {
+      result = result.filter(c => c.transactionType === selectedTransactionType);
+    }
+    if (selectedLocality !== 'all') {
+      result = result.filter(c => {
+        const dealer = dealers.find(d => d.id === c.dealerId);
+        return dealer?.areaId === selectedLocality;
+      });
+    }
+
     setFiltered(result);
     setCurrentPage(1);
-  }, [collections, search]);
+  }, [collections, search, fromDate, toDate, reportType, selectedTransactionType, selectedLocality, dealers]);
 
   const kpiData = useMemo(() => {
-    const totalAmount = collections.reduce((sum, c) => sum + (c.amount || 0), 0);
-    const pendingCount = collections.filter(c => c.settlementStatus === 'pending').length;
-    const settledCount = collections.filter(c => c.settlementStatus === 'settled').length;
-    const todayAmount = collections
-      .filter(c => {
-        const today = new Date().toISOString().slice(0, 10);
-        return (c.collectionDate || '').slice(0, 10) === today;
-      })
-      .reduce((sum, c) => sum + (c.amount || 0), 0);
+    const totalRecords = filtered.length;
+    const totalAmount = filtered.reduce((sum, c) => sum + (c.amount || 0), 0);
     return [
-      {label: 'Total Collections', value: `PKR ${totalAmount.toLocaleString()}`, icon: HandHeart, gradient: ['#3B82F6', '#1E40AF']},
-      {label: 'Today', value: `PKR ${todayAmount.toLocaleString()}`, icon: HandHeart, gradient: ['#10B981', '#065F46']},
-      {label: 'Pending', value: String(pendingCount), icon: HandHeart, gradient: ['#F59E0B', '#B45309']},
-      {label: 'Settled', value: String(settledCount), icon: HandHeart, gradient: ['#10B981', '#065F46']},
+      {label: 'Total Records', value: String(totalRecords), icon: Wallet, gradient: ['#10B981', '#16A34A']},
+      {label: 'Total Amount', value: `PKR ${totalAmount.toLocaleString()}`, icon: Wallet, gradient: ['#F59E0B', '#B45309']},
     ];
-  }, [collections]);
+  }, [filtered]);
+
+  const handleToggleStatus = async (collection: DealerCollection) => {
+    const newStatus = collection.settlementStatus === 'settled' ? 'pending' : 'settled';
+    try {
+      await updateDealerCollection(collection.id, {settlementStatus: newStatus});
+      setCollections(prev => prev.map(c => c.id === collection.id ? {...c, settlementStatus: newStatus} : c));
+      Alert.alert('Updated', `Status changed to ${newStatus}.`);
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to update status';
+      Alert.alert('Error', msg);
+    }
+  };
+
+  const exportExcel = () => {
+    if (filtered.length === 0) {
+      Alert.alert('No data', 'No records to export.');
+      return;
+    }
+    const headers = ['Dealer Name', 'Address', 'Amount', 'Transaction Type', 'Collection Date', 'Status', 'Received By'];
+    const rows = filtered.map(item => [
+      item.dealerName || '',
+      item.dealerAddress || '',
+      String(item.amount || 0),
+      item.transactionType || 'cash',
+      item.collectionDate || '',
+      item.settlementStatus || '',
+      item.receivedByName || '',
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    Alert.alert('Export', `Export ${filtered.length} records as CSV`);
+    console.log(csvContent);
+  };
 
   const handleDelete = (collection: DealerCollection) => {
     Alert.alert('Delete Collection', `Delete collection from "${collection.dealerName}"?`, [
@@ -429,15 +501,103 @@ export default function CollectionsScreen() {
             {/* Hero Header */}
             <View style={styles.heroHeader}>
               <GradientView colors={['#10B981', '#16A34A']} style={styles.heroIconBox}>
-                <HandHeart size={20} color="#FFFFFF" />
+                <Wallet size={20} color="#FFFFFF" />
               </GradientView>
               <View style={styles.heroInfo}>
-                <Text style={styles.heroTitle}>Dealer Collections</Text>
-                <Text style={styles.heroSubtitle}>Track all collections received from your dealers.</Text>
+                <Text style={styles.heroTitle}>Dealers Collections</Text>
+                <Text style={styles.heroSubtitle}>View collections made by dealers</Text>
               </View>
             </View>
 
             <CollectionsDivider />
+
+            {/* Filter Row */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.filterRowContainer}>
+              <View style={styles.filterRow}>
+              <View style={styles.filterField}>
+                <Calendar size={14} color="#6B7280" style={styles.filterIcon} />
+                <TextInput
+                  style={styles.filterInput}
+                  placeholder="From Date"
+                  placeholderTextColor="#9CA3AF"
+                  value={fromDate}
+                  onChangeText={setFromDate}
+                />
+              </View>
+              <View style={styles.filterField}>
+                <Calendar size={14} color="#6B7280" style={styles.filterIcon} />
+                <TextInput
+                  style={styles.filterInput}
+                  placeholder="To Date"
+                  placeholderTextColor="#9CA3AF"
+                  value={toDate}
+                  onChangeText={setToDate}
+                />
+              </View>
+              <TouchableOpacity
+                style={styles.filterSelect}
+                onPress={() => setSelectSheet({
+                  key: 'reportType',
+                  title: 'Report Type',
+                  options: REPORT_TYPE_OPTIONS,
+                  selected: reportType,
+                  onSelect: setReportType,
+                })}>
+                <Text style={styles.filterSelectText}>
+                  {REPORT_TYPE_OPTIONS.find(o => o.value === reportType)?.label || 'Report Type'}
+                </Text>
+                <ChevronDown size={14} color="#6B7280" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.filterSelect}
+                onPress={() => setSelectSheet({
+                  key: 'locality',
+                  title: 'Locality',
+                  options: [{label: 'All Localities', value: 'all'}, ...areas.map(a => ({label: a.locality || a.city, value: a.id}))],
+                  selected: selectedLocality,
+                  onSelect: setSelectedLocality,
+                })}>
+                <Text style={styles.filterSelectText}>
+                  {selectedLocality === 'all' ? 'All Localities' : (areas.find(a => a.id === selectedLocality)?.locality || areas.find(a => a.id === selectedLocality)?.city || selectedLocality)}
+                </Text>
+                <ChevronDown size={14} color="#6B7280" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.filterSelect}
+                onPress={() => setSelectSheet({
+                  key: 'transactionType',
+                  title: 'Transaction Type',
+                  options: TRANSACTION_TYPE_FILTER_OPTIONS,
+                  selected: selectedTransactionType,
+                  onSelect: setSelectedTransactionType,
+                })}>
+                <Text style={styles.filterSelectText}>
+                  {TRANSACTION_TYPE_FILTER_OPTIONS.find(o => o.value === selectedTransactionType)?.label || 'Transaction Type'}
+                </Text>
+                <ChevronDown size={14} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+            </ScrollView>
+
+            <View style={styles.filterActions}>
+              <GradientButton
+                colors={['#10B981', '#16A34A']}
+                style={styles.applyBtn}
+                onPress={() => {}}>
+                <Text style={styles.applyBtnText}>Apply Filters</Text>
+              </GradientButton>
+              <TouchableOpacity style={styles.exportBtn} onPress={exportExcel}>
+                <Download size={14} color="#166534" />
+                <Text style={styles.exportBtnText}>Excel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.exportBtn} onPress={() => Alert.alert('Print', 'Print report')}>
+                <Printer size={14} color="#166534" />
+                <Text style={styles.exportBtnText}>Print</Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Stat cards */}
             <ScrollView
@@ -844,6 +1004,73 @@ const styles = StyleSheet.create({
   },
   statLabel: {fontSize: 11, color: '#6B7280', fontWeight: '500'},
   statValue: {fontSize: 18, fontWeight: '700', color: '#111827'},
+  filterRowContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+  },
+  filterField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 12,
+    height: 42,
+    flex: 1,
+    minWidth: 110,
+  },
+  filterIcon: {marginRight: 6},
+  filterInput: {flex: 1, paddingVertical: 8, fontSize: 13, color: '#111827'},
+  filterSelect: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 12,
+    height: 42,
+    flex: 1,
+    minWidth: 110,
+    justifyContent: 'space-between',
+  },
+  filterSelectText: {flex: 1, fontSize: 13, color: '#111827', marginRight: 4},
+  filterActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    gap: 8,
+  },
+  applyBtn: {
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    flexShrink: 0,
+    shadowOffset: {width: 0, height: 3},
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  applyBtnText: {color: '#FFFFFF', fontSize: 13, fontWeight: '600'},
+  exportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    gap: 4,
+  },
+  exportBtnText: {fontSize: 13, color: '#166534', fontWeight: '600'},
   toolbar: {
     flexDirection: 'row',
     alignItems: 'center',
