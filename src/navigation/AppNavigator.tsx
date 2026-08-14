@@ -18,6 +18,7 @@ export type AuthStackParamList = {
 
 export type MainStackParamList = {
   CompanySelect: undefined;
+  MainApp: undefined;
   MainTabs: undefined;
 };
 
@@ -42,7 +43,9 @@ function MainNavigator() {
       {!companyId ? (
         <MainStack.Screen name="CompanySelect" component={CompanySelectScreen} />
       ) : (
-        <MainStack.Screen name="MainApp" component={DrawerNavigator} />
+        <MainStack.Screen name="MainApp">
+          {() => <DrawerNavigator key={companyId} />}
+        </MainStack.Screen>
       )}
     </MainStack.Navigator>
   );

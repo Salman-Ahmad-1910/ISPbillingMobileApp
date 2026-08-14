@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient from './client';
 import {ApiResponse, Payment, PromiseEntry, TransactionType} from '../types';
 
@@ -62,6 +63,18 @@ export async function updateTransactionType(id: string, data: Partial<Transactio
 
 export async function deleteTransactionType(id: string): Promise<void> {
   await apiClient.delete<ApiResponse>(`/billing/transaction-types/${id}`);
+}
+
+// --- Bills ---
+
+export async function getBills(): Promise<any[]> {
+  const companyId = await AsyncStorage.getItem('company_id');
+  const params: Record<string, string> = {};
+  if (companyId) {
+    params.companyId = companyId;
+  }
+  const response = await apiClient.get<ApiResponse<any[]>>('/billing/bills', {params});
+  return response.data.data || [];
 }
 
 // --- Bill Creator ---

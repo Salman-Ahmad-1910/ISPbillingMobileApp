@@ -45,6 +45,7 @@ import AllocatedCollectionsScreen from '../screens/transaction/AllocatedCollecti
 import TransactionTypeScreen from '../screens/transaction/TransactionTypeScreen';
 import BadDebtCollectionsScreen from '../screens/transaction/BadDebtCollectionsScreen';
 import BillCreatorScreen from '../screens/transaction/BillCreatorScreen';
+import ReportsScreen from '../screens/reports/ReportsScreen';
 import CollectionsScreen from '../screens/reports/CollectionsScreen';
 import DefaultersScreen from '../screens/reports/DefaultersScreen';
 import NewDealersScreen from '../screens/reports/NewDealersScreen';
@@ -53,10 +54,41 @@ import AccountHeadScreen from '../screens/accounts/AccountHeadScreen';
 import AccountEntryScreen from '../screens/accounts/AccountEntryScreen';
 import AccountReportsScreen from '../screens/accounts/AccountReportsScreen';
 import OneDayBalanceSheetScreen from '../screens/accounts/OneDayBalanceSheetScreen';
+import SaleReportScreen from '../screens/sale-report/SaleReportScreen';
+import StockReportScreen from '../screens/stock-report/StockReportScreen';
 import UserComplaintScreen from '../screens/complaints/UserComplaintScreen';
 import AllocatedComplaintScreen from '../screens/complaints/AllocatedComplaintScreen';
 import SubjectTypeScreen from '../screens/complaints/SubjectTypeScreen';
 import ComplaintReportScreen from '../screens/complaints/ComplaintReportScreen';
+import RecoveryAreasScreen from '../screens/recovery/RecoveryAreasScreen';
+import RecoveryOfficersScreen from '../screens/recovery/RecoveryOfficersScreen';
+import HumanResourcesNavigator from './HumanResourcesNavigator';
+import AttendanceScreen from '../screens/human-resources/AttendanceScreen';
+import AdvancesScreen from '../screens/human-resources/AdvancesScreen';
+import CompanyProfileScreen from '../screens/administration/CompanyProfileScreen';
+import CompaniesScreen from '../screens/administration/CompaniesScreen';
+import RolesPermissionsScreen from '../screens/administration/RolesPermissionsScreen';
+import SystemConfigScreen from '../screens/administration/SystemConfigScreen';
+import DeletedCollectionsScreen from '../screens/system-logs/DeletedCollectionsScreen';
+import DeletedMembersScreen from '../screens/system-logs/DeletedMembersScreen';
+import UpdateConnectionLogsScreen from '../screens/system-logs/UpdateConnectionLogsScreen';
+import SubscriberReportScreen from '../screens/subscriber-reports/SubscriberReportScreen';
+import DeactivatedUsersScreen from '../screens/subscriber-reports/DeactivatedUsersScreen';
+import PackageWiseScreen from '../screens/subscriber-reports/PackageWiseScreen';
+import PromiseDateReportsScreen from '../screens/subscriber-reports/PromiseDateReportsScreen';
+import AllocatedDefaultersScreen from '../screens/subscriber-reports/AllocatedDefaultersScreen';
+import ExpiryDefaultersScreen from '../screens/subscriber-reports/ExpiryDefaultersScreen';
+import MonthWiseDefaultersScreen from '../screens/subscriber-reports/MonthWiseDefaultersScreen';
+import MonthlyCollectionsScreen from '../screens/subscriber-reports/MonthlyCollectionsScreen';
+import SubscriberAllocatedCollectionsScreen from '../screens/subscriber-reports/AllocatedCollectionsScreen';
+import MWCMCollectionMonthlyScreen from '../screens/subscriber-reports/MWCMCollectionMonthlyScreen';
+import NotGeneratedCollectionsScreen from '../screens/subscriber-reports/NotGeneratedCollectionsScreen';
+import UnpaidCollectionsScreen from '../screens/subscriber-reports/UnpaidCollectionsScreen';
+import SubscribersDefaultersScreen from '../screens/subscriber-reports/SubscribersDefaultersScreen';
+import NewSubscribersScreen from '../screens/subscriber-reports/NewSubscribersScreen';
+import SubscribersCreatorSummaryScreen from '../screens/subscriber-reports/SubscribersCreatorSummaryScreen';
+import SupportScreen from '../screens/support/SupportScreen';
+import CompanySwitcher from '../components/CompanySwitcher';
 import {
   AreasNavigator,
   PopsNavigator,
@@ -109,11 +141,14 @@ import {
   HandHelping,
   ShieldCheck,
   Settings,
+  Trash2,
+  UserX,
   FileClock,
   HandCoins,
   UserSearch,
   LifeBuoy,
   LogOut,
+  FileX2,
 } from 'lucide-react-native';
 
 const Drawer = createDrawerNavigator();
@@ -186,7 +221,7 @@ const navItems: {title: string; items: NavItem[]}[] = [
     title: 'Dealer Management',
     items: [
        {label: 'My Dealers', icon: Users, screen: 'MyDealers'},
-      {label: 'Reports', icon: FolderClosed},
+      {label: 'Reports', icon: FolderClosed, screen: 'Reports'},
       {label: 'Collections', icon: Wallet, screen: 'Collections'},
       {label: 'Defaulters', icon: TriangleAlert, screen: 'Defaulters'},
       {label: 'New Dealers', icon: UserPlus, screen: 'NewDealers'},
@@ -217,6 +252,14 @@ const navItems: {title: string; items: NavItem[]}[] = [
     ],
   },
   {
+    title: 'Stock Report',
+    items: [{label: 'Abstract Stock', icon: Box, screen: 'StockReport'}],
+  },
+  {
+    title: 'Sale Report',
+    items: [{label: 'Abstract Sale', icon: Receipt, screen: 'SaleReport'}],
+  },
+  {
     title: 'Complaints',
     items: [
       {label: 'User Complaint', icon: UserPlus, screen: 'UserComplaints'},
@@ -229,53 +272,66 @@ const navItems: {title: string; items: NavItem[]}[] = [
     title: 'Service Desk',
     items: [
       {label: 'Alerts', icon: BellRing},
-      {label: 'Support Tickets', icon: Headphones},
+      {label: 'Support', icon: Headphones, screen: 'Support'},
     ],
   },
   {
     title: 'Recovery Officers',
     items: [
-      {label: 'Areas', icon: Map},
-      {label: 'Officers', icon: UserCheck},
+      {label: 'Areas', icon: Map, screen: 'RecoveryAreas'},
+      {label: 'Officers', icon: UserCheck, screen: 'RecoveryOfficers'},
     ],
   },
-  {
-    title: 'Human Resources',
-    items: [
-      {label: 'Staff', icon: Briefcase},
-      {label: 'Attendance', icon: CalendarDays},
-      {label: 'Advances & Loans', icon: HandHelping},
-    ],
-  },
+      {
+        title: 'Human Resources',
+        items: [
+          {label: 'Staff', icon: Briefcase, screen: 'Staff'},
+          {label: 'Attendance', icon: CalendarDays, screen: 'Attendance'},
+          {label: 'Advances & Loans', icon: HandHelping, screen: 'Advances'},
+        ],
+      },
   {
     title: 'Administration',
     items: [
-      {label: 'My Company Profile', icon: Building},
-      {label: 'Companies', icon: Building2},
-      {label: 'Roles & Permissions', icon: ShieldCheck},
-      {label: 'System Config', icon: Settings},
-      {label: 'System Logs', icon: FileText},
+          {label: 'My Company Profile', icon: Building, screen: 'CompanyProfile'},
+          {label: 'Companies', icon: Building2, screen: 'Companies'},
+       {label: 'Roles & Permissions', icon: ShieldCheck, screen: 'RolesPermissions'},
+       {label: 'System Config', icon: Settings, screen: 'SystemConfig'},
     ],
   },
   {
-    title: 'Reports',
+    title: 'System Log',
     items: [
-      {label: 'User Collection', icon: Wallet},
-      {label: 'Deactivate Users List', icon: UserSearch},
-      {label: 'Package Wise List', icon: Box},
-      {label: 'Promise Date Reports', icon: FileClock},
-      {label: 'Allocated Defaulters', icon: TriangleAlert},
-      {label: 'Expiry Wise Defaulters', icon: ChartBarBig},
-      {label: 'Month Wise Defaulters', icon: FileText},
-      {label: 'Monthly Collections', icon: HandCoins},
-      {label: 'User Creator Summary', icon: UserPlus},
+      {label: 'Deleted Collections', icon: Trash2, screen: 'DeletedCollections'},
+      {label: 'Deleted Members', icon: UserX, screen: 'DeletedMembers'},
+      {label: 'Update Connection Log', icon: ArrowLeftRight, screen: 'UpdateConnectionLogs'},
+    ],
+  },
+  {
+    title: 'Subscriber Reports',
+    items: [
+      {label: 'Subscriber Report', icon: Wallet, screen: 'SubscriberReport'},
+      {label: 'Deactivate Users List', icon: UserSearch, screen: 'DeactivatedUsers'},
+      {label: 'Package Wise List', icon: Box, screen: 'PackageWise'},
+      {label: 'Promise Date Reports', icon: FileClock, screen: 'PromiseDateReports'},
+      {label: 'Allocated Defaulters', icon: TriangleAlert, screen: 'AllocatedDefaulters'},
+      {label: 'Expiry Wise Defaulters', icon: ChartBarBig, screen: 'ExpiryDefaulters'},
+      {label: 'Month Wise Defaulters', icon: FileText, screen: 'MonthWiseDefaulters'},
+      {label: 'Monthly Collections', icon: HandCoins, screen: 'MonthlyCollections'},
+      {label: 'Allocated Collections', icon: Handshake, screen: 'SubscriberAllocatedCollections'},
+      {label: 'MWCM', icon: ChartBarBig, screen: 'MWCM'},
+      {label: 'Not Generated Collection', icon: FileX2, screen: 'NotGeneratedCollections'},
+      {label: 'UnPaid Collection', icon: Wallet, screen: 'UnpaidCollections'},
+      {label: 'Subscribers Defaulters', icon: TriangleAlert, screen: 'SubscribersDefaulters'},
+      {label: 'New Subscribers List', icon: UserPlus, screen: 'NewSubscribers'},
+      {label: 'Subscribers Creator Summary', icon: UserSearch, screen: 'SubscribersCreatorSummary'},
     ],
   },
 ];
 
 function DrawerContent(props: any) {
   const {navigation} = props;
-  const {user, logout} = useAuth();
+  const {logout} = useAuth();
   const [openGroup, setOpenGroup] = useState<string | null>('Dashboard');
 
   const handleLogout = () => {
@@ -308,19 +364,8 @@ function DrawerContent(props: any) {
         <Text style={styles.appName}>Fintrack ERP</Text>
       </View>
 
-      {/* User Card */}
-      <View style={styles.userCard}>
-        <View style={styles.userAvatar}>
-          <Text style={styles.userAvatarText}>
-            {user?.name?.charAt(0)?.toUpperCase() || '?'}
-          </Text>
-        </View>
-        <View style={styles.userInfo}>
-          <Text style={styles.userName}>{user?.name}</Text>
-          <Text style={styles.userEmail}>{user?.email}</Text>
-          <Text style={styles.userRole}>{user?.role || 'Admin'}</Text>
-        </View>
-      </View>
+      {/* Company Switcher */}
+      <CompanySwitcher />
 
       {/* Navigation */}
       <ScrollView style={styles.navScroll} showsVerticalScrollIndicator={false}>
@@ -359,7 +404,7 @@ function DrawerContent(props: any) {
 
       {/* Footer */}
       <View style={styles.drawerFooter}>
-        <TouchableOpacity style={styles.footerItem}>
+        <TouchableOpacity style={styles.footerItem} onPress={() => navigation.navigate('Support')}>
           <View style={styles.navItemIconBox}>
             <LifeBuoy size={16} color="#9CA3AF" />
           </View>
@@ -401,8 +446,7 @@ export default function DrawerNavigator() {
         headerShown: false,
         drawerType: 'front',
         overlayColor: 'rgba(0, 0, 0, 0.5)',
-        swipeEnabled: true,
-        swipeEdgeWidth: 40,
+        swipeEnabled: false,
         drawerStyle: {
           width: 280,
           backgroundColor: '#111827',
@@ -578,6 +622,14 @@ export default function DrawerNavigator() {
         component={OneDayBalanceSheetScreen}
       />
       <Drawer.Screen
+        name="StockReport"
+        component={StockReportScreen}
+      />
+      <Drawer.Screen
+        name="SaleReport"
+        component={SaleReportScreen}
+      />
+      <Drawer.Screen
         name="UserComplaints"
         component={UserComplaintScreen}
       />
@@ -592,6 +644,118 @@ export default function DrawerNavigator() {
       <Drawer.Screen
         name="ComplaintReport"
         component={ComplaintReportScreen}
+      />
+      <Drawer.Screen
+        name="RecoveryAreas"
+        component={RecoveryAreasScreen}
+      />
+      <Drawer.Screen
+        name="RecoveryOfficers"
+        component={RecoveryOfficersScreen}
+      />
+      <Drawer.Screen
+        name="Staff"
+        component={HumanResourcesNavigator}
+      />
+      <Drawer.Screen
+        name="Attendance"
+        component={AttendanceScreen}
+      />
+      <Drawer.Screen
+        name="Advances"
+        component={AdvancesScreen}
+      />
+      <Drawer.Screen
+        name="CompanyProfile"
+        component={CompanyProfileScreen}
+      />
+      <Drawer.Screen
+        name="Companies"
+        component={CompaniesScreen}
+      />
+      <Drawer.Screen
+        name="RolesPermissions"
+        component={RolesPermissionsScreen}
+      />
+      <Drawer.Screen
+        name="SystemConfig"
+        component={SystemConfigScreen}
+      />
+      <Drawer.Screen
+        name="DeletedCollections"
+        component={DeletedCollectionsScreen}
+      />
+      <Drawer.Screen
+        name="DeletedMembers"
+        component={DeletedMembersScreen}
+      />
+      <Drawer.Screen
+        name="UpdateConnectionLogs"
+        component={UpdateConnectionLogsScreen}
+      />
+      <Drawer.Screen
+        name="SubscriberReport"
+        component={SubscriberReportScreen}
+      />
+      <Drawer.Screen
+        name="DeactivatedUsers"
+        component={DeactivatedUsersScreen}
+      />
+      <Drawer.Screen
+        name="PackageWise"
+        component={PackageWiseScreen}
+      />
+      <Drawer.Screen
+        name="PromiseDateReports"
+        component={PromiseDateReportsScreen}
+      />
+      <Drawer.Screen
+        name="AllocatedDefaulters"
+        component={AllocatedDefaultersScreen}
+      />
+      <Drawer.Screen
+        name="ExpiryDefaulters"
+        component={ExpiryDefaultersScreen}
+      />
+      <Drawer.Screen
+        name="MonthWiseDefaulters"
+        component={MonthWiseDefaultersScreen}
+      />
+      <Drawer.Screen
+        name="MonthlyCollections"
+        component={MonthlyCollectionsScreen}
+      />
+      <Drawer.Screen
+        name="SubscriberAllocatedCollections"
+        component={SubscriberAllocatedCollectionsScreen}
+      />
+      <Drawer.Screen
+        name="MWCM"
+        component={MWCMCollectionMonthlyScreen}
+      />
+      <Drawer.Screen
+        name="NotGeneratedCollections"
+        component={NotGeneratedCollectionsScreen}
+      />
+      <Drawer.Screen
+        name="UnpaidCollections"
+        component={UnpaidCollectionsScreen}
+      />
+      <Drawer.Screen
+        name="SubscribersDefaulters"
+        component={SubscribersDefaultersScreen}
+      />
+      <Drawer.Screen
+        name="NewSubscribers"
+        component={NewSubscribersScreen}
+      />
+      <Drawer.Screen
+        name="SubscribersCreatorSummary"
+        component={SubscribersCreatorSummaryScreen}
+      />
+      <Drawer.Screen
+        name="Support"
+        component={SupportScreen}
       />
       <Drawer.Screen
         name="DealerManagement"
@@ -614,10 +778,6 @@ export default function DrawerNavigator() {
         component={() => <PlaceholderScreen title="Service Desk" />}
       />
       <Drawer.Screen
-        name="RecoveryOfficers"
-        component={() => <PlaceholderScreen title="Recovery Officers" />}
-      />
-      <Drawer.Screen
         name="HumanResources"
         component={() => <PlaceholderScreen title="Human Resources" />}
       />
@@ -627,7 +787,7 @@ export default function DrawerNavigator() {
       />
       <Drawer.Screen
         name="Reports"
-        component={() => <PlaceholderScreen title="Reports" />}
+        component={ReportsScreen}
       />
     </Drawer.Navigator>
   );
@@ -665,47 +825,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#F9FAFB',
-  },
-  userCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1F2937',
-  },
-  userAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: '#1F2937',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  userAvatarText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  userInfo: {
-    flex: 1,
-  },
-  userName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#F9FAFB',
-  },
-  userEmail: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginTop: 1,
-  },
-  userRole: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    marginTop: 1,
-    textTransform: 'capitalize',
   },
   navScroll: {
     flex: 1,

@@ -625,17 +625,113 @@ export type Dealer = {
   updatedAt?: string;
 };
 
+export type StaffQualification = {
+  id?: string;
+  staffId?: string;
+  qualification?: string;
+  institute?: string;
+  startDate?: string;
+  endDate?: string;
+  obtainedMarks?: string;
+  grade?: string;
+  majorSubject?: string;
+};
+
+export type StaffExperience = {
+  id?: string;
+  staffId?: string;
+  organization?: string;
+  designation?: string;
+  startDate?: string;
+  endDate?: string;
+  description?: string;
+};
+
+export type StaffWorkTime = {
+  id?: string;
+  staffId?: string;
+  day?: string;
+  startTime?: string;
+  endTime?: string;
+};
+
 export type Staff = {
   id: string;
   name: string;
   email?: string;
   phone?: string;
+  secondaryPhone?: string;
   designation?: string;
   department?: string;
-  areaId?: string;
+  salary?: number;
+  areaId?: string | null;
   companyId?: string;
+  password?: string;
+  role?: string;
+
+  // Personal Information
+  gender?: string;
+  maritalStatus?: string;
+  fatherName?: string;
+  nic?: string;
+  address?: string;
+
+  // Accounts
+  basicPay?: number;
+  leaveAllow?: number;
+  paymentMode?: string;
+  bankName?: string;
+  accountTitle?: string;
+  accountNo?: string;
+
+  // Employment
+  appointedDate?: string;
+  technical?: string;
+  status?: string;
+  leaveDate?: string;
+  plainPassword?: string;
+
+  // Related
+  qualifications?: StaffQualification[];
+  experiences?: StaffExperience[];
+  workTimes?: StaffWorkTime[];
+
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type StaffDepartment = {
+  id: string;
+  name: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type Attendance = {
+  id: string;
+  staffId?: string;
+  staffName?: string;
+  date?: string;
+  status?: string;
+  checkIn?: string;
+  checkOut?: string;
+  companyId?: string;
+};
+
+export type AdvanceLoan = {
+  id: string;
+  staffId?: string;
+  staffName?: string;
+  category?: string;
+  direction?: string;
+  amount?: number;
+  date?: string;
+  returnValue?: number;
+  transactionType?: string;
+  comments?: string;
+  description?: string;
+  repaymentStatus?: string;
+  companyId?: string;
 };
 
 export type RecoveryOfficer = {
@@ -643,10 +739,14 @@ export type RecoveryOfficer = {
   name: string;
   email?: string;
   phone?: string;
+  secondaryPhone?: string;
   areaId?: string;
+  status?: 'active' | 'inactive';
   companyId?: string;
   createdAt?: string;
   updatedAt?: string;
+  target?: number;
+  collected?: number;
 };
 
 export type DealerCollection = {
@@ -697,13 +797,89 @@ export interface AccountEntry {
   id: string;
   head: string;
   subHead: string;
-  description: string;
-  date: string;
-  addBy: string;
-  editBy: string;
-  amount: number;
-  transactionType: string;
-  companyId?: string;
-  created_at?: string;
-  updated_at?: string;
+   description: string;
+   date: string;
+   addBy: string;
+   editBy: string;
+   amount: number;
+   transactionType: string;
+   companyId?: string;
+   created_at?: string;
+   updated_at?: string;
 }
+
+export type Role = {
+  id: string;
+  name: string;
+  description?: string;
+  // Legacy field: comma separated string or array of permission ids
+  permissions?: any;
+  _count?: {users?: number};
+  companyId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type UserPermission = {
+  id?: string;
+  userId?: string;
+  permissionId: string;
+  webEnabled?: boolean;
+  mobileEnabled?: boolean;
+  companyId?: string;
+};
+
+export type SystemConfig = {
+  id: string;
+  appName: string;
+  defaultCurrency: string;
+  autoSuspend: boolean;
+  gracePeriod: number;
+  invoiceTemplate: string;
+  smsGateway: string;
+  whatsAppGateway: string;
+  invoiceSms: string;
+  enable2fa: boolean;
+  sessionTimeout: number;
+  companyId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SystemLogEntry = {
+  id: string;
+  timestamp: string;
+  userId?: string;
+  userName?: string;
+  action: string;
+  module: string;
+  description?: string;
+  userAgent?: string;
+  status: string;
+  page?: string;
+  details?: {entityId?: string; path?: string} | null;
+};
+
+export type ConnectionLog = {
+  id: string;
+  connectionId: string;
+  subscriberName?: string;
+  internetId?: string;
+  connectionType?: string;
+  actionType?: string;
+  fieldName?: string;
+  oldValue?: string;
+  newValue?: string;
+  reason?: string;
+  remarks?: string;
+  updatedBy?: string;
+  updatedByName?: string;
+  userRole?: string;
+  branch?: string;
+  ipAddress?: string;
+  deviceName?: string;
+  logDate?: string;
+  logTime?: string;
+  companyId?: string;
+  createdAt?: string;
+};

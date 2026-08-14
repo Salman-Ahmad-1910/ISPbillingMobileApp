@@ -169,15 +169,16 @@ async function doEnsureWorkingBaseUrl(excludeUrl?: string): Promise<string> {
   // physical device connected over USB, `localhost:8090` only works while an
   // `adb reverse tcp:8090` rule exists (easily lost on reconnect), so the LAN
   // IP is the reliable fallback and must be probed as a first-class candidate.
-  const lanPromise = lanIp
-    ? Promise.resolve(lanIp)
-    : discoverLanIp().then(ip => {
-        if (ip) {
-          lanIp = ip;
-          AsyncStorage.setItem(LAN_IP_STORAGE_KEY, ip).catch(() => {});
-        }
-        return ip;
-      });
+  // We always re-discover (never trust a cached IP blindly): the dev machine's
+  // IP can change between sessions, and only Metro knows the current one. The
+  // cached IP is kept purely as a fallback when discovery itself fails.
+  const lanPromise = discoverLanIp().then(ip => {
+    if (ip) {
+      lanIp = ip;
+      AsyncStorage.setItem(LAN_IP_STORAGE_KEY, ip).catch(() => {});
+    }
+    return ip || lanIp;
+  });
 
   // Parallel sweep of the remaining candidates.
   const sweep = candidateUrls().filter(u => u !== current && u !== excludeUrl);
@@ -196,8 +197,12 @@ async function doEnsureWorkingBaseUrl(excludeUrl?: string): Promise<string> {
     return found;
   }
 
-  baseUrl = candidateUrls()[0];
-  return baseUrl;
+  // Nothing responded. Deliberately do NOT store this in `baseUrl`: caching an
+  // unverified URL poisons the module state and makes every later request reuse
+  // a dead host without re-detecting. Leaving `baseUrl` empty means the next
+  // request re-runs the full detection (fresh probes + LAN IP discovery), so
+  // the app recovers as soon as a host becomes reachable again.
+  return candidateUrls()[0];
 }
 
 // Concurrent callers share a single resolution so we never stack duplicate
