@@ -37,3 +37,21 @@ export async function updateArea(id: string, data: Partial<Area>): Promise<Area>
 export async function deleteArea(id: string): Promise<void> {
   await apiClient.delete<ApiResponse>(`/network/areas/${id}`);
 }
+
+export async function assignAreaOfficer(
+  areaId: string,
+  recoveryOfficerId: string,
+): Promise<void> {
+  await apiClient.post<ApiResponse>(`/network/areas/${areaId}/assign-officer`, {
+    recoveryOfficerId,
+  });
+}
+
+export async function unassignAreaOfficer(
+  areaId: string,
+  recoveryOfficerId: string,
+): Promise<void> {
+  await apiClient.post<ApiResponse>(`/network/areas/${areaId}/unassign-officer`, {
+    recoveryOfficerId,
+  });
+}

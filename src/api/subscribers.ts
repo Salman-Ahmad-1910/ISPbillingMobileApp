@@ -166,6 +166,17 @@ export async function deleteSale(id: string): Promise<void> {
   await apiClient.delete<ApiResponse>(`/pos/sales/${id}`);
 }
 
+export async function payHoldSale(
+  id: string,
+  paymentMethod: string,
+): Promise<any> {
+  const response = await apiClient.patch(`/pos/sales/${id}/status`, {
+    status: 'completed',
+    paymentMethod: paymentMethod === 'hold' ? 'cash' : paymentMethod,
+  });
+  return response.data;
+}
+
 export async function addSaleToCollection(data: {
   subscriberId: string;
   subscriberName: string;

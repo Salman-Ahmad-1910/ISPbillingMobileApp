@@ -33,10 +33,15 @@ import {
   Printer,
   Loader,
   X,
+  BadgeCheck,
 } from 'lucide-react-native';
-import {getSales, deleteSale, addSaleToCollection, getInstallmentForSale} from '../../api/subscribers';
-import {Sale} from '../../types';
+import {getSales, deleteSale, payHoldSale, addSaleToCollection, getInstallmentForSale} from '../../api/subscribers';
+import {Sale, Company} from '../../types';
 import {GradientView} from '../../components/GradientView';
+import {print} from 'react-native-print';
+import {buildSaleReceiptHtml, InstallmentReceiptInfo} from '../../utils/sale-receipt';
+import {getApiBaseUrl} from '../../api/client';
+import {useAuth} from '../../context/AuthContext';
 
 const PAGE_SIZES = [5, 10, 20, 50];
 
@@ -85,6 +90,7 @@ const fmtPKR = (n: number) => new Intl.NumberFormat('en-US').format(Number(n) ||
 export default function SalesScreen() {
   const nav = useNavigation();
   const drawerStatus = useDrawerStatus();
+  const {companyId, companies} = useAuth();
   const [sales, setSales] = useState<Sale[]>([]);
   const [filtered, setFiltered] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,9 +102,10 @@ export default function SalesScreen() {
   const [pageSizeOpen, setPageSizeOpen] = useState(false);
   const [detailVisible, setDetailVisible] = useState(false);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
-  const [installmentInfo, setInstallmentInfo] = useState<any>(null);
-  const [, setPrintSize] = useState<'a4' | 'thermal'>('a4');
+  const [installmentInfo, setInstallmentInfo] = useState<InstallmentReceiptInfo | null>(null);
+  const [printSize, setPrintSize] = useState<'a4' | 'thermal'>('a4');
   const [printVisible, setPrintVisible] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
   const [isAddingToCollection, setIsAddingToCollection] = useState(false);
 
   const openDrawer = () => {
@@ -171,6 +178,23 @@ export default function SalesScreen() {
     ]);
   };
 
+  const handlePayHold = async (sale: Sale) => {
+    try {
+      await payHoldSale(sale.id, sale.paymentMethod || 'cash');
+      setSales(prev =>
+        prev.map(s =>
+          s.id === sale.id
+            ? {...s, status: 'completed', paymentMethod: sale.paymentMethod === 'hold' ? 'cash' : s.paymentMethod}
+            : s,
+        ),
+      );
+      Alert.alert('Bill Paid', `Hold bill ${sale.id} has been paid. The sale is now permanent.`);
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to pay this bill';
+      Alert.alert('Error', msg);
+    }
+  };
+
   const handleAddToCollection = async (sale: Sale) => {
     if (!sale.subscriberId) {
       Alert.alert('Error', 'No subscriber associated with this sale');
@@ -205,22 +229,68 @@ export default function SalesScreen() {
       const instData = payload?.installment || payload;
       if (instData && instData.id) {
         setInstallmentInfo({
-          id: instData.id,
           planName: instData.planName,
           totalInstallments: instData.totalInstallments,
           paidInstallments: instData.paidInstallments,
           nextInstallment: instData.nextInstallment,
           installmentAmount: instData.installmentAmount,
           totalAmount: instData.totalAmount,
+          remainingInstallments: instData.totalInstallments - instData.paidInstallments,
+          percentage: Math.round((instData.paidInstallments / instData.totalInstallments) * 100),
           status: instData.status,
-          subscriberName: instData.subscriberName,
-          saleId: instData.saleId,
         });
       } else {
         setInstallmentInfo(null);
       }
     } catch {
       setInstallmentInfo(null);
+    }
+  };
+
+  const handlePrintSale = async (sale: Sale, size: 'a4' | 'thermal') => {
+    if (!sale) return;
+    setIsPrinting(true);
+    try {
+      let instInfo: InstallmentReceiptInfo | null = installmentInfo;
+      if (sale.isInstallment && sale.subscriberId) {
+        try {
+          const data = await getInstallmentForSale(sale.subscriberId, companyId || '', sale.id);
+          const payload = data?.data || data;
+          const instData = payload?.installment || payload;
+          if (instData && instData.id) {
+            instInfo = {
+              planName: instData.planName,
+              totalInstallments: instData.totalInstallments,
+              paidInstallments: instData.paidInstallments,
+              nextInstallment: instData.nextInstallment,
+              installmentAmount: instData.installmentAmount,
+              totalAmount: instData.totalAmount,
+              remainingInstallments: instData.totalInstallments - instData.paidInstallments,
+              percentage: Math.round((instData.paidInstallments / instData.totalInstallments) * 100),
+              status: instData.status,
+            };
+          }
+        } catch {
+          // fall back to current installmentInfo
+        }
+      }
+      const company: Company | undefined = companies.find(c => c.id === companyId);
+      const baseUrl = await getApiBaseUrl();
+      const invoiceNumber = sales.indexOf(sale) + 1;
+      const html = buildSaleReceiptHtml(
+        {sale, company, baseUrl, invoiceNumber, installmentInfo: instInfo},
+        size,
+      );
+      await print({html});
+      setPrintVisible(false);
+      setSelectedSale(null);
+      setInstallmentInfo(null);
+      Alert.alert('Print Sent', 'Receipt sent to the printer. Please select your printer from the system dialog.');
+    } catch (err: any) {
+      const msg = err?.message || 'Failed to print. Make sure a printer is connected.';
+      Alert.alert('Print Error', msg);
+    } finally {
+      setIsPrinting(false);
     }
   };
 
@@ -270,12 +340,13 @@ export default function SalesScreen() {
       .filter(Boolean)
       .flatMap((s: any) =>
         String(s)
-          .split(',')
+          .split(/[\s,\-]+/)
           .map((x: string) => x.trim())
           .filter(Boolean),
       );
     const uniqueSerials = [...new Set(serials as string[])];
-    const singleSerial = uniqueSerials[0] || '';
+    const isHold = item.status === 'hold';
+    const productPreview = (item.items || []).slice(0, 2);
 
     return (
       <TouchableOpacity style={styles.card} onPress={() => openDetail(item)}>
@@ -289,7 +360,7 @@ export default function SalesScreen() {
           <View style={styles.cardRight}>
             <Text style={styles.cardAmount}>PKR {fmtPKR(displayAmount)}</Text>
             {item.isInstallment && increasePercent > 0 && (
-              <Text style={styles.cardIncrease}>+{increasePercent}%</Text>
+              <Text style={styles.cardIncrease}>+{increasePercent}% increase</Text>
             )}
           </View>
         </View>
@@ -300,24 +371,47 @@ export default function SalesScreen() {
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Payment</Text>
           <View style={styles.paymentBadge}>
-            <Text style={styles.paymentText}>{item.paymentMethod}</Text>
+            {isHold ? (
+              <View style={styles.holdBadge}>
+                <Text style={styles.holdText}>Hold</Text>
+              </View>
+            ) : (
+              <Text style={styles.paymentText}>{item.paymentMethod}</Text>
+            )}
             {item.isInstallment && (
-              <Text style={styles.installmentBadge}>Installment</Text>
+              <View style={styles.installmentBadge}>
+                <Text style={styles.installmentBadgeText}>Installment</Text>
+              </View>
             )}
           </View>
         </View>
         <View style={styles.infoRow}>
           <Text style={styles.infoLabel}>Items</Text>
-          <Text style={styles.infoValue}>{totalQty} item{totalQty !== 1 ? 's' : ''}</Text>
-        </View>
-        {singleSerial ? (
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>SN / MAC</Text>
-            <Text style={[styles.infoValue, styles.serialText]} numberOfLines={1}>
-              {singleSerial}
+          <View style={styles.infoValueWrap}>
+            <Text style={styles.infoValue}>{totalQty} item{totalQty !== 1 ? 's' : ''}</Text>
+            <Text style={styles.cardProducts} numberOfLines={1}>
+              {productPreview.map(i => `${i.productName} x${i.quantity}`).join(', ')}
+              {(item.items || []).length > 2 ? '...' : ''}
             </Text>
           </View>
-        ) : null}
+        </View>
+        {uniqueSerials.length > 0 && (
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>SN / MAC</Text>
+            <View style={styles.infoValueWrap}>
+              {uniqueSerials.slice(0, 3).map((sn, i) => (
+                <Text key={i} style={[styles.infoValue, styles.serialText]} numberOfLines={1}>
+                  {sn}
+                </Text>
+              ))}
+              {uniqueSerials.length > 3 && (
+                <Text style={styles.serialMore}>
+                  +{uniqueSerials.length - 3} more (total {uniqueSerials.length})
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
         <View style={styles.cardFooter}>
           <View style={styles.cardActions}>
             <TouchableOpacity
@@ -326,6 +420,14 @@ export default function SalesScreen() {
               <Pencil size={14} color="#2563EB" />
               <Text style={styles.editBtnText}>View</Text>
             </TouchableOpacity>
+            {isHold && (
+              <TouchableOpacity
+                style={styles.payBtn}
+                onPress={() => handlePayHold(item)}>
+                <BadgeCheck size={14} color="#059669" />
+                <Text style={styles.payBtnText}>Mark as Paid</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={styles.deleteBtn}
               onPress={() => handleDelete(item.id)}>
@@ -618,13 +720,19 @@ export default function SalesScreen() {
                     {selectedSale.date ? new Date(selectedSale.date).toLocaleDateString() : ''}
                   </Text>
                   <View style={styles.detailBadges}>
-                    <View style={styles.paymentBadge}>
-                      <Text style={styles.paymentText}>{selectedSale.paymentMethod}</Text>
-                    </View>
+                    {selectedSale.status === 'hold' ? (
+                      <View style={styles.holdBadge}>
+                        <Text style={styles.holdText}>Hold</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.paymentBadge}>
+                        <Text style={styles.paymentText}>{selectedSale.paymentMethod}</Text>
+                      </View>
+                    )}
                     <Text style={styles.detailId}>#{selectedSale.id}</Text>
                     {selectedSale.isInstallment && (
                       <View style={styles.installmentBadge}>
-                        <Text>Installment</Text>
+                        <Text style={styles.installmentBadgeText}>Installment</Text>
                       </View>
                     )}
                   </View>
@@ -638,13 +746,16 @@ export default function SalesScreen() {
                   const net = price * qty;
                   const taxPercent = Number((item as any).taxPercent) || 0;
                   const sst = net * (taxPercent / 100);
-                  const payable = net + sst;
+                  const sn = String(item.serialNumber || '').trim();
 
                   return (
                     <View key={item.id || idx} style={styles.itemCard}>
+                      <View style={styles.itemSNRow}>
+                        <Text style={styles.itemSNLabel}>SN / MAC</Text>
+                        <Text style={styles.itemSNValue} numberOfLines={1}>{sn ? sn : '—'}</Text>
+                      </View>
                       <View style={styles.itemHeader}>
-                        <Text style={styles.itemName}>{item.productName}</Text>
-                        <Text style={styles.itemQty}>x{qty}</Text>
+                        <Text style={styles.itemName}>{item.productName}{qty !== 1 ? ` ×${qty}` : ''}</Text>
                       </View>
                       <View style={styles.itemDetails}>
                         <View style={styles.itemRow}>
@@ -661,10 +772,6 @@ export default function SalesScreen() {
                             <Text style={styles.itemValue}>PKR {fmtPKR(sst)}</Text>
                           </View>
                         )}
-                        <View style={[styles.itemRow, styles.itemTotalRow]}>
-                          <Text style={styles.itemTotalLabel}>Payable</Text>
-                          <Text style={styles.itemTotalValue}>PKR {fmtPKR(payable)}</Text>
-                        </View>
                       </View>
                     </View>
                   );
@@ -761,6 +868,12 @@ export default function SalesScreen() {
                       <Text style={styles.totalLabel}>Tax</Text>
                       <Text style={styles.totalValue}>PKR {fmtPKR(selectedSale.taxAmount)}</Text>
                     </View>
+                    {Number(selectedSale.discount) > 0 && (
+                      <View style={styles.totalRow}>
+                        <Text style={styles.totalLabel}>Discount</Text>
+                        <Text style={styles.totalValue}>- PKR {fmtPKR(Number(selectedSale.discount) || 0)}</Text>
+                      </View>
+                    )}
                     <View style={[styles.totalRow, styles.totalFinalRow]}>
                       <Text style={styles.totalFinalLabel}>Total</Text>
                       <Text style={styles.totalFinalValue}>PKR {fmtPKR(selectedSale.totalAmount)}</Text>
@@ -769,6 +882,19 @@ export default function SalesScreen() {
                 </View>
 
                 {/* Action Buttons */}
+                {selectedSale.status === 'hold' && (
+                  <TouchableOpacity
+                    style={styles.payHoldBtn}
+                    onPress={() => {
+                      handlePayHold(selectedSale);
+                      setDetailVisible(false);
+                      setSelectedSale(null);
+                      setInstallmentInfo(null);
+                    }}>
+                    <BadgeCheck size={16} color="#FFFFFF" />
+                    <Text style={styles.payHoldBtnText}>Mark as Paid</Text>
+                  </TouchableOpacity>
+                )}
                 <View style={styles.detailActions}>
                   <TouchableOpacity
                     style={styles.printBtn}
@@ -818,19 +944,31 @@ export default function SalesScreen() {
             <Text style={styles.printSheetDesc}>Choose your paper size to print the sale receipt.</Text>
             <View style={styles.printOptions}>
               <TouchableOpacity
-                style={styles.printOptionBtn}
+                style={[styles.printOptionBtn, isPrinting && styles.printOptionBtnDisabled]}
+                disabled={isPrinting}
                 onPress={() => {
-                  setPrintVisible(false);
-                  Alert.alert('Print', 'A4 receipt printing would open in the browser. In production, use react-native-print.');
+                  setPrintSize('a4');
+                  handlePrintSale(selectedSale!, 'a4');
                 }}>
+                {isPrinting && printSize === 'a4' ? (
+                  <Loader size={16} color="#374151" />
+                ) : (
+                  <Printer size={16} color="#374151" />
+                )}
                 <Text style={styles.printOptionText}>A4 Size</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={styles.printOptionBtn}
+                style={[styles.printOptionBtn, isPrinting && styles.printOptionBtnDisabled]}
+                disabled={isPrinting}
                 onPress={() => {
-                  setPrintVisible(false);
-                  Alert.alert('Print', 'Thermal receipt printing would open in the browser. In production, use react-native-print.');
+                  setPrintSize('thermal');
+                  handlePrintSale(selectedSale!, 'thermal');
                 }}>
+                {isPrinting && printSize === 'thermal' ? (
+                  <Loader size={16} color="#374151" />
+                ) : (
+                  <Printer size={16} color="#374151" />
+                )}
                 <Text style={styles.printOptionText}>Thermal / 80mm</Text>
               </TouchableOpacity>
             </View>
@@ -994,16 +1132,33 @@ const styles = StyleSheet.create({
   },
   paymentBadge: {flexDirection: 'row', alignItems: 'center', gap: 8},
   paymentText: {fontSize: 12, color: '#374151', fontWeight: '500', textTransform: 'capitalize'},
-  installmentBadge: {
-    fontSize: 10,
-    backgroundColor: '#DBEAFE',
-    color: '#1D4ED8',
+  holdBadge: {
+    backgroundColor: '#FEF3C7',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
     overflow: 'hidden',
+  },
+  holdText: {
+    fontSize: 10,
+    color: '#B45309',
     fontWeight: '600',
   },
+  installmentBadge: {
+    backgroundColor: '#DBEAFE',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  installmentBadgeText: {
+    fontSize: 10,
+    color: '#1D4ED8',
+    fontWeight: '600',
+  },
+  infoValueWrap: {flex: 1},
+  cardProducts: {fontSize: 11, color: '#6B7280', marginTop: 2},
+  serialMore: {fontSize: 10, color: '#6B7280', marginTop: 2, fontStyle: 'italic'},
   cardFooter: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -1013,7 +1168,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     marginTop: 6,
   },
-  cardActions: {flexDirection: 'row', gap: 8},
+  cardActions: {flexDirection: 'row', gap: 8, flexWrap: 'wrap'},
   editBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1024,6 +1179,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#DBEAFE',
   },
   editBtnText: {fontSize: 12, fontWeight: '500', color: '#2563EB'},
+  payBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 6,
+    backgroundColor: '#D1FAE5',
+  },
+  payBtnText: {fontSize: 12, fontWeight: '500', color: '#059669'},
   deleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1173,9 +1338,20 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
   },
+  itemSNRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginBottom: 8,
+  },
+  itemSNLabel: {fontSize: 11, color: '#9CA3AF', fontWeight: '500'},
+  itemSNValue: {fontSize: 11, color: '#111827', fontWeight: '600', flex: 1, textAlign: 'right', marginLeft: 8},
   itemHeader: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8},
   itemName: {fontSize: 14, fontWeight: '600', color: '#111827', flex: 1},
-  itemQty: {fontSize: 12, color: '#6B7280', backgroundColor: '#E5E7EB', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4},
   itemDetails: {gap: 4},
   itemRow: {flexDirection: 'row', justifyContent: 'space-between'},
   itemLabel: {fontSize: 12, color: '#9CA3AF'},
@@ -1212,6 +1388,17 @@ const styles = StyleSheet.create({
   totalFinalLabel: {fontSize: 14, fontWeight: '700', color: '#111827'},
   totalFinalValue: {fontSize: 14, fontWeight: '700', color: '#111827'},
   detailActions: {flexDirection: 'row', gap: 8, marginTop: 16, paddingBottom: 20},
+  payHoldBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#059669',
+    marginTop: 16,
+  },
+  payHoldBtnText: {fontSize: 14, fontWeight: '600', color: '#FFFFFF'},
   printBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1257,13 +1444,17 @@ const styles = StyleSheet.create({
   printSheetDesc: {fontSize: 13, color: '#6B7280', marginBottom: 16},
   printOptions: {gap: 10},
   printOptionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     paddingVertical: 14,
     borderRadius: 10,
     backgroundColor: '#F3F4F6',
-    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
+  printOptionBtnDisabled: {opacity: 0.5},
   printOptionText: {fontSize: 14, fontWeight: '600', color: '#374151'},
   cancelBtn: {
     marginTop: 16,

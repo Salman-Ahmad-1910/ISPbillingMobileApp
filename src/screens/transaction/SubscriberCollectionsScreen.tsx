@@ -38,11 +38,13 @@ import {
   Landmark,
   Smartphone,
   Printer,
+  Clock,
 } from 'lucide-react-native';
 import {useAuth} from '../../context/AuthContext';
 import {getConnections} from '../../api/connections';
 import {getRecoveryOfficers} from '../../api/messages';
 import {areasApi} from '../../api/network';
+import {getDashboardData} from '../../api/dashboard';
 import {
   getPayments,
   createPayment,
@@ -79,12 +81,6 @@ const MONTH_NAMES = [
 ];
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-const PAYMENT_METHODS = [
-  {id: 'cash', name: 'Cash'},
-  {id: 'bank', name: 'Bank'},
-  {id: 'online', name: 'Online'},
-];
 
 type HistoryItem =
   | {kind: 'promise'; promise: PromiseEntry}
@@ -352,6 +348,9 @@ export default function SubscriberCollectionsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  const [pendingSubscribers, setPendingSubscribers] = useState(0);
+  const [pendingAmount, setPendingAmount] = useState(0);
+
   const [subscriberSearch, setSubscriberSearch] = useState('');
   const [selectedSubscriberId, setSelectedSubscriberId] = useState<string | null>(null);
 
@@ -360,7 +359,7 @@ export default function SubscriberCollectionsScreen() {
   const [receiveDate, setReceiveDate] = useState(toDateStr(new Date()));
   const [receiveMethod, setReceiveMethod] = useState('cash');
   const [receiveComment, setReceiveComment] = useState('');
-  const [selectedTransactionTypeId, setSelectedTransactionTypeId] = useState('');
+  const [receiveTransactionId, setReceiveTransactionId] = useState('');
   const [selectedPromiseId, setSelectedPromiseId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [receiveDateOpen, setReceiveDateOpen] = useState(false);
@@ -375,6 +374,8 @@ export default function SubscriberCollectionsScreen() {
 
   const [editPayment, setEditPayment] = useState<Payment | null>(null);
   const [editAmount, setEditAmount] = useState(0);
+  const [editTransactionId, setEditTransactionId] = useState('');
+  const [editTransactionType, setEditTransactionType] = useState('');
   const [showEditDialog, setShowEditDialog] = useState(false);
 
   const [printPayment, setPrintPayment] = useState<Payment | null>(null);
@@ -397,16 +398,21 @@ export default function SubscriberCollectionsScreen() {
       } else {
         setLoading(true);
       }
-      const [connectionData, areaData, officerData, txnTypeData] = await Promise.all([
+      const [connectionData, areaData, officerData, txnTypeData, dashData] = await Promise.all([
         getConnections().catch(() => []),
         areasApi.list().catch(() => []),
         getRecoveryOfficers().catch(() => []),
         getTransactionTypes().catch(() => []),
+        getDashboardData().catch(() => null),
       ]);
       setConnections(connectionData);
       setAreas(areaData);
       setRecoveryOfficers(officerData);
       setTransactionTypes(txnTypeData);
+      if (dashData) {
+        setPendingSubscribers(dashData.subscribersStats?.pending ?? 0);
+        setPendingAmount(dashData.pendingAmount ?? 0);
+      }
     } catch {
       Alert.alert('Error', 'Failed to load subscriber collections');
     } finally {
@@ -451,13 +457,25 @@ export default function SubscriberCollectionsScreen() {
   const filteredSubscribers = useMemo(() => {
     const q = subscriberSearch.trim().toLowerCase();
     if (!q) return [];
-    return connections
-      .filter(c => {
-        const id = (c.id || '').toLowerCase();
-        const name = (c.name || '').toLowerCase();
-        return id.includes(q) || name.includes(q) || (c.internetId || '').toLowerCase().includes(q);
-      })
-      .slice(0, 20);
+    const MIN_NAME_SEARCH_LENGTH = 3;
+
+    const isIdMatch = (c: Connection) => {
+      const id = (c.id || '').toLowerCase();
+      const internetId = (c.internetId || '').toLowerCase();
+      return id.includes(q) || internetId.includes(q);
+    };
+    const isNameMatch = (c: Connection) => (c.name || '').toLowerCase().includes(q);
+
+    const idMatches = connections.filter(isIdMatch);
+    const nameOnlyMatches = connections.filter(c => isNameMatch(c) && !isIdMatch(c));
+
+    if (q.length < MIN_NAME_SEARCH_LENGTH) {
+      // Fewer than 3 characters: ID matches first, name matches last.
+      return [...idMatches, ...nameOnlyMatches].slice(0, 20);
+    }
+
+    // 3+ characters: name matches first, then ID matches (so IDs like "K071" still resolve).
+    return [...nameOnlyMatches, ...idMatches].slice(0, 20);
   }, [connections, subscriberSearch]);
 
   const selectedSubscriber = useMemo(() => {
@@ -522,24 +540,73 @@ export default function SubscriberCollectionsScreen() {
     return area?.subLocality || area?.locality || '';
   }, [selectedSubscriber, areas]);
 
-  const subscriberRemaining = useMemo(
-    () => (selectedSubscriber ? getTotalOwed(selectedSubscriber) : 0),
+  const packageFee = useMemo(
+    () => (selectedSubscriber ? getPackagePrice(selectedSubscriber) : 0),
     [selectedSubscriber],
   );
 
-  const remainingAfterPayment = Math.max(0, subscriberRemaining - receiveAmount);
+  const totalReceivedThisMonth = useMemo(() => {
+    if (!selectedSubscriber) return 0;
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    return subscriberPayments
+      .filter((p: Payment) => {
+        if (!p.paymentDate) return false;
+        const d = new Date(p.paymentDate);
+        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      })
+      .reduce((sum: number, p: Payment) => sum + (Number(p.amount) || 0), 0);
+  }, [selectedSubscriber, subscriberPayments]);
+
+  const storedRemaining = useMemo(
+    () => (selectedSubscriber ? Number(selectedSubscriber.remainingAmount) || 0 : 0),
+    [selectedSubscriber],
+  );
+
+  const remainingAmount = useMemo(() => {
+    if (!selectedSubscriber || !packageFee) return packageFee;
+    return packageFee - totalReceivedThisMonth;
+  }, [selectedSubscriber, packageFee, totalReceivedThisMonth]);
+
+  const displayRemaining = useMemo(() => {
+    return Math.max(0, remainingAmount);
+  }, [remainingAmount]);
+
+  const advanceAmount = useMemo(() => {
+    return storedRemaining < 0 ? Math.abs(storedRemaining) : 0;
+  }, [storedRemaining]);
+
+  const afterPaymentRemaining = useMemo(() => {
+    return Math.max(0, remainingAmount - receiveAmount);
+  }, [remainingAmount, receiveAmount]);
 
   const filteredTransactionTypes = useMemo(() => {
-    if (!receiveMethod || receiveMethod === 'cash') return [];
-    return transactionTypes.filter(t => t.paymentChannel && t.paymentChannel !== 'Cash');
-  }, [transactionTypes, receiveMethod]);
+    const all = transactionTypes;
+    const seen = new Set<string>();
+    return all.filter(t => {
+      const name = t.paymentChannel || t.transaction;
+      if (!name || seen.has(name)) return false;
+      seen.add(name);
+      return true;
+    });
+  }, [transactionTypes]);
+
+  const mergedPaymentOptions = useMemo(() => {
+    const cashOption = {id: 'cash', name: 'Cash'};
+    const txOptions = filteredTransactionTypes.map(t => ({
+      id: t.paymentChannel || t.transaction,
+      name: t.paymentChannel || t.transaction,
+    }));
+    return [cashOption, ...txOptions];
+  }, [filteredTransactionTypes]);
 
   const resetReceiveFields = () => {
     setReceiveAmount(0);
     setReceiveDate(toDateStr(new Date()));
     setReceiveMethod('cash');
     setReceiveComment('');
-    setSelectedTransactionTypeId('');
+    setReceiveTransactionId('');
     setSelectedPromiseId(null);
   };
 
@@ -547,13 +614,6 @@ export default function SubscriberCollectionsScreen() {
     if (!selectedSubscriber || !user) return;
     if (!receiveAmount || receiveAmount <= 0) {
       Alert.alert('Error', 'Enter a valid amount');
-      return;
-    }
-    if (receiveAmount > subscriberRemaining) {
-      Alert.alert(
-        'Error',
-        `Payment amount cannot exceed the remaining amount of ${formatMoney(subscriberRemaining)}.`,
-      );
       return;
     }
     setIsSaving(true);
@@ -564,6 +624,8 @@ export default function SubscriberCollectionsScreen() {
         amount: receiveAmount,
         paymentDate: receiveDate,
         method: receiveMethod,
+        transactionId: receiveTransactionId.trim(),
+        transactionType: receiveMethod,
         collectorId: user.id,
       });
       if (selectedPromiseId) {
@@ -637,7 +699,12 @@ export default function SubscriberCollectionsScreen() {
     }
     setIsSaving(true);
     try {
-      await updatePayment(editPayment.id, {...editPayment, amount: editAmount});
+      await updatePayment(editPayment.id, {
+        ...editPayment,
+        amount: editAmount,
+        transactionId: editTransactionId.trim(),
+        transactionType: editTransactionType || editPayment.method,
+      });
       Alert.alert('Success', 'Payment entry updated.');
       setShowEditDialog(false);
       setEditPayment(null);
@@ -697,7 +764,7 @@ export default function SubscriberCollectionsScreen() {
     setReceiveDate(toDateStr(new Date()));
     setReceiveMethod('cash');
     setReceiveComment('');
-    setSelectedTransactionTypeId('');
+    setReceiveTransactionId('');
     setShowReceiveDialog(true);
   };
 
@@ -836,6 +903,8 @@ export default function SubscriberCollectionsScreen() {
             onPress={() => {
               setEditPayment(pay);
               setEditAmount(Number(pay.amount) || 0);
+              setEditTransactionId(pay.transactionId || '');
+              setEditTransactionType(pay.transactionType || pay.method || '');
               setShowEditDialog(true);
             }}>
             <Pencil size={16} color="#2563EB" />
@@ -883,15 +952,56 @@ export default function SubscriberCollectionsScreen() {
               {selectedSubscriber.address || '---'}
             </Text>
           </View>
+        </View>
+
+        <View style={styles.subscriberMetricsDivider} />
+
+        <View style={styles.subscriberGrid}>
+          <View style={styles.subscriberCell}>
+            <Text style={styles.subscriberLabel}>Package Fee</Text>
+            <Text style={styles.subscriberValue}>{formatMoney(packageFee)}</Text>
+          </View>
+          <View style={styles.subscriberCell}>
+            <Text style={styles.subscriberLabel}>Received This Month</Text>
+            <Text style={styles.subscriberValue}>{formatMoney(totalReceivedThisMonth)}</Text>
+          </View>
           <View style={styles.subscriberCell}>
             <Text style={styles.subscriberLabel}>Remaining</Text>
             <Text
               style={[
                 styles.subscriberValue,
-                subscriberRemaining > 0 ? styles.remainingDue : styles.remainingPaid,
+                displayRemaining === 0 ? styles.remainingPaid : styles.remainingDue,
               ]}>
-              {formatMoney(subscriberRemaining)}
+              {formatMoney(displayRemaining)}
             </Text>
+          </View>
+          <View style={styles.subscriberCell}>
+            <Text style={styles.subscriberLabel}>Advance Amount</Text>
+            <Text style={[styles.subscriberValue, advanceAmount > 0 ? styles.advanceValue : null]}>
+              {advanceAmount > 0 ? formatMoney(advanceAmount) : formatMoney(0)}
+            </Text>
+          </View>
+          <View style={styles.subscriberCell}>
+            <Text style={styles.subscriberLabel}>Status</Text>
+            {advanceAmount > 0 ? (
+              <View style={[styles.statusBadge, styles.statusAdvance]}>
+                <Text style={[styles.statusText, styles.statusTextPaid]}>Advance</Text>
+              </View>
+            ) : storedRemaining > 0 ? (
+              <View style={[styles.statusBadge, styles.statusPending]}>
+                <Text style={[styles.statusText, styles.statusTextPending]}>Pending</Text>
+              </View>
+            ) : remainingAmount > 0 ? (
+              <View style={[styles.statusBadge, styles.statusPending]}>
+                <Text style={[styles.statusText, styles.statusTextPending]}>Unpaid This Month</Text>
+              </View>
+            ) : packageFee > 0 ? (
+              <View style={[styles.statusBadge, styles.statusPaid]}>
+                <Text style={[styles.statusText, styles.statusTextPaid]}>Full</Text>
+              </View>
+            ) : (
+              <Text style={styles.subscriberValue}>---</Text>
+            )}
           </View>
         </View>
 
@@ -912,6 +1022,9 @@ export default function SubscriberCollectionsScreen() {
               style={styles.receiveBtn}
               onPress={() => {
                 setSelectedPromiseId(null);
+                setReceiveAmount(displayRemaining);
+                setReceiveMethod('cash');
+                setReceiveTransactionId('');
                 setShowReceiveDialog(true);
               }}>
               <DollarSign size={16} color="#FFFFFF" />
@@ -973,22 +1086,30 @@ export default function SubscriberCollectionsScreen() {
 
             <View style={styles.statsRow}>
               <StatCard
-                label="Subscribers"
+                label="Total Subscribers"
                 value={String(totalSubscribers)}
                 colors={['#3B82F6', '#06B6D4']}
                 icon={<Users size={16} color="#FFFFFF" />}
-              />
-              <StatCard
-                label="Collections"
-                value={String(payments.length)}
-                colors={['#10B981', '#059669']}
-                icon={<Wallet size={16} color="#FFFFFF" />}
               />
               <StatCard
                 label="Total Collected"
                 value={formatMoney(totalAmount)}
                 colors={['#F59E0B', '#EA580C']}
                 icon={<DollarSign size={16} color="#FFFFFF" />}
+              />
+            </View>
+            <View style={styles.statsRow}>
+              <StatCard
+                label="Pending Subscribers"
+                value={String(pendingSubscribers)}
+                colors={['#F97316', '#F59E0B']}
+                icon={<Clock size={16} color="#FFFFFF" />}
+              />
+              <StatCard
+                label="Pending Amount"
+                value={formatMoney(pendingAmount)}
+                colors={['#EF4444', '#E11D48']}
+                icon={<Wallet size={16} color="#FFFFFF" />}
               />
             </View>
 
@@ -1217,6 +1338,17 @@ export default function SubscriberCollectionsScreen() {
                 </View>
               </View>
 
+              <View style={styles.fieldGrid2}>
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>Mobile</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    value={selectedSubscriber?.mobile || selectedSubscriber?.cell || '---'}
+                    editable={false}
+                  />
+                </View>
+              </View>
+
               <View style={styles.field}>
                 <Text style={styles.fieldLabel}>Received By</Text>
                 <TextInput style={styles.fieldInput} value={recoveryOfficerName} editable={false} />
@@ -1224,32 +1356,58 @@ export default function SubscriberCollectionsScreen() {
 
               <View style={styles.fieldGrid2}>
                 <View style={styles.field}>
-                  <Text style={styles.fieldLabel}>Remaining Amount</Text>
+                  <Text style={styles.fieldLabel}>Package Fee (PKR)</Text>
                   <TextInput
-                    style={[styles.fieldInput, subscriberRemaining > 0 ? styles.fieldInputDanger : styles.fieldInputPaid]}
-                    value={formatMoney(remainingAfterPayment)}
+                    style={[styles.fieldInput, styles.fieldInputBold]}
+                    value={packageFee.toLocaleString()}
                     editable={false}
                   />
                 </View>
                 <View style={styles.field}>
-                  <Text style={styles.fieldLabel}>Amount (PKR)</Text>
+                  <Text style={styles.fieldLabel}>Remaining (PKR)</Text>
                   <TextInput
-                    style={[styles.fieldInput, receiveAmount > subscriberRemaining ? styles.fieldInputDanger : null]}
-                    keyboardType="numeric"
-                    placeholder="Enter amount"
-                    placeholderTextColor="#9CA3AF"
-                    value={receiveAmount ? String(receiveAmount) : ''}
-                    onChangeText={text => setReceiveAmount(parseFloat(text) || 0)}
+                    style={[styles.fieldInput, styles.fieldInputBold]}
+                    value={displayRemaining.toLocaleString()}
+                    editable={false}
                   />
                 </View>
               </View>
 
-              {receiveAmount > subscriberRemaining ? (
-                <View style={styles.fieldError}>
-                  <CircleAlert size={14} color="#DC2626" />
-                  <Text style={styles.fieldErrorText}>
-                    Payment amount cannot exceed the remaining amount of{' '}
-                    {formatMoney(subscriberRemaining)}.
+              <View style={styles.field}>
+                <Text style={styles.fieldLabel}>Amount (PKR)</Text>
+                <TextInput
+                  style={[styles.fieldInput, receiveAmount > displayRemaining ? styles.fieldInputDanger : null]}
+                  keyboardType="numeric"
+                  placeholder="Enter amount"
+                  placeholderTextColor="#9CA3AF"
+                  value={receiveAmount ? String(receiveAmount) : ''}
+                  onChangeText={text => setReceiveAmount(parseFloat(text) || 0)}
+                />
+              </View>
+
+              {receiveAmount > 0 ? (
+                <View style={[
+                  styles.afterPaymentNotice,
+                  afterPaymentRemaining === 0
+                    ? styles.afterPaymentPaid
+                    : receiveAmount > displayRemaining
+                    ? styles.afterPaymentAdvance
+                    : styles.afterPaymentPending,
+                ]}>
+                  <Text style={[
+                    styles.afterPaymentText,
+                    afterPaymentRemaining === 0
+                      ? styles.afterPaymentTextPaid
+                      : receiveAmount > displayRemaining
+                      ? styles.afterPaymentTextAdvance
+                      : styles.afterPaymentTextPending,
+                  ]}>
+                    {afterPaymentRemaining === 0
+                      ? `Fully Paid — PKR ${receiveAmount.toLocaleString()} covers the remaining`
+                      : receiveAmount > displayRemaining
+                      ? `Advance — PKR ${(receiveAmount - displayRemaining).toLocaleString()} extra will be credited`
+                      : `After Payment — PKR ${afterPaymentRemaining.toLocaleString()} remaining`
+                    }
                   </Text>
                 </View>
               ) : null}
@@ -1270,16 +1428,20 @@ export default function SubscriberCollectionsScreen() {
                   onPress={() =>
                     setMethodSheet({
                       title: 'Select payment type',
-                      options: PAYMENT_METHODS,
+                      options: mergedPaymentOptions,
                       selected: receiveMethod,
                       onSelect: v => {
                         setReceiveMethod(v);
-                        setSelectedTransactionTypeId('');
+                        if (v !== 'cash' && selectedSubscriber?.transactionId) {
+                          setReceiveTransactionId(selectedSubscriber.transactionId);
+                        } else {
+                          setReceiveTransactionId('');
+                        }
                       },
                     })
                   }>
                   <Text style={styles.selectFieldText}>
-                    {PAYMENT_METHODS.find(m => m.id === receiveMethod)?.name || 'Select'}
+                    {mergedPaymentOptions.find(m => m.id === receiveMethod)?.name || 'Select'}
                   </Text>
                   <ChevronDown size={16} color="#9CA3AF" />
                 </TouchableOpacity>
@@ -1287,23 +1449,18 @@ export default function SubscriberCollectionsScreen() {
 
               {receiveMethod !== 'cash' ? (
                 <View style={styles.field}>
-                  <Text style={styles.fieldLabel}>Transaction Type</Text>
-                  <TouchableOpacity
-                    style={styles.selectField}
-                    onPress={() =>
-                      setTxnTypeSheet({
-                        title: 'Select transaction type',
-                        options: filteredTransactionTypes.map(t => ({id: t.id, name: t.paymentChannel || t.transaction})),
-                        selected: selectedTransactionTypeId,
-                        onSelect: v => setSelectedTransactionTypeId(v),
-                      })
-                    }>
-                    <Text style={styles.selectFieldText}>
-                      {filteredTransactionTypes.find(t => t.id === selectedTransactionTypeId)?.paymentChannel ||
-                        'Select transaction type'}
-                    </Text>
-                    <ChevronDown size={16} color="#9CA3AF" />
-                  </TouchableOpacity>
+                  <Text style={styles.fieldLabel}>Transaction ID</Text>
+                  <TextInput
+                    style={styles.fieldInput}
+                    value={receiveTransactionId}
+                    onChangeText={setReceiveTransactionId}
+                    editable={!selectedSubscriber?.transactionId}
+                    placeholder={selectedSubscriber?.transactionId ? 'Auto-filled from subscriber' : 'Enter transaction ID / reference number'}
+                    placeholderTextColor="#9CA3AF"
+                  />
+                  {selectedSubscriber?.transactionId ? (
+                    <Text style={styles.fieldHint}>Auto-filled from subscriber record</Text>
+                  ) : null}
                 </View>
               ) : null}
 
@@ -1323,7 +1480,7 @@ export default function SubscriberCollectionsScreen() {
                 colors={['#10B981', '#059669']}
                 style={styles.submitBtn}
                 onPress={handleReceive}
-                disabled={isSaving || !receiveAmount || receiveAmount > subscriberRemaining}>
+                disabled={isSaving || !receiveAmount || !receiveMethod}>
                 {isSaving ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
@@ -1429,7 +1586,7 @@ export default function SubscriberCollectionsScreen() {
                   <Text style={styles.fieldLabel}>Bill #</Text>
                   <TextInput
                     style={styles.fieldInput}
-                    value={editPayment?.id?.slice(0, 8).toUpperCase() || ''}
+                    value={editPayment?.billNo?.toString() || editPayment?.id?.slice(0, 8).toUpperCase() || '---'}
                     editable={false}
                   />
                 </View>
@@ -1449,11 +1606,41 @@ export default function SubscriberCollectionsScreen() {
                 />
               </View>
 
+              <View style={styles.field}>
+                <Text style={styles.fieldLabel}>Transaction ID</Text>
+                <TextInput
+                  style={styles.fieldInput}
+                  value={editTransactionId}
+                  onChangeText={setEditTransactionId}
+                  placeholder="Enter transaction ID / reference number"
+                  placeholderTextColor="#9CA3AF"
+                />
+              </View>
+
+              <View style={styles.field}>
+                <Text style={styles.fieldLabel}>Transaction Type</Text>
+                <TouchableOpacity
+                  style={styles.selectField}
+                  onPress={() =>
+                    setTxnTypeSheet({
+                      title: 'Select transaction type',
+                      options: filteredTransactionTypes.map(t => ({id: t.paymentChannel || t.transaction, name: t.paymentChannel || t.transaction})),
+                      selected: editTransactionType,
+                      onSelect: v => setEditTransactionType(v),
+                    })
+                  }>
+                  <Text style={styles.selectFieldText}>
+                    {editTransactionType || 'Select transaction type (Cash, Easypaisa, or bank name)...'}
+                  </Text>
+                  <ChevronDown size={16} color="#9CA3AF" />
+                </TouchableOpacity>
+              </View>
+
               <GradientButton
                 colors={['#10B981', '#059669']}
                 style={styles.submitBtn}
                 onPress={handleEditSave}
-                disabled={isSaving || !editAmount}>
+                disabled={isSaving || !editAmount || !editTransactionType}>
                 {isSaving ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
@@ -1804,7 +1991,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 14,
   },
-  subscriberCell: {width: '33.33%', paddingRight: 8, marginBottom: 12},
+  subscriberCell: {width: '48%', paddingRight: 8, marginBottom: 12},
   subscriberCellWide: {width: '100%', paddingRight: 8, marginBottom: 12},
   subscriberLabel: {fontSize: 11, color: '#9CA3AF', marginBottom: 2},
   subscriberValue: {fontSize: 13, color: '#374151', fontWeight: '600'},
@@ -1816,6 +2003,39 @@ const styles = StyleSheet.create({
   },
   remainingDue: {color: '#DC2626'},
   remainingPaid: {color: '#16A34A'},
+  subscriberMetricsDivider: {
+    height: 1,
+    backgroundColor: '#F3F4F6',
+    marginBottom: 12,
+  },
+  statusBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderWidth: 1,
+    marginTop: 2,
+  },
+  statusAdvance: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  statusPending: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  statusPaid: {
+    backgroundColor: '#ECFDF5',
+    borderColor: '#A7F3D0',
+  },
+  statusText: {fontSize: 10, fontWeight: '700'},
+  statusTextPaid: {color: '#16A34A'},
+  statusTextPending: {color: '#D97706'},
+  advanceValue: {color: '#2563EB'},
+  fieldInputBold: {fontWeight: '600'},
+  afterPaymentTextPaid: {color: '#16A34A'},
+  afterPaymentTextAdvance: {color: '#2563EB'},
+  afterPaymentTextPending: {color: '#D97706'},
   actionBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2078,6 +2298,27 @@ const styles = StyleSheet.create({
   fieldTextarea: {minHeight: 70, textAlignVertical: 'top'},
   fieldError: {flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6},
   fieldErrorText: {flex: 1, fontSize: 12, color: '#DC2626', fontWeight: '500'},
+  fieldHint: {fontSize: 11, color: '#6B7280', marginTop: 4},
+  afterPaymentNotice: {
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 12,
+  },
+  afterPaymentPaid: {
+    borderColor: '#A7F3D0',
+    backgroundColor: '#ECFDF5',
+  },
+  afterPaymentAdvance: {
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+  },
+  afterPaymentPending: {
+    borderColor: '#FDE68A',
+    backgroundColor: '#FFFBEB',
+  },
+  afterPaymentText: {fontSize: 13, fontWeight: '600'},
   dateField: {
     flexDirection: 'row',
     alignItems: 'center',

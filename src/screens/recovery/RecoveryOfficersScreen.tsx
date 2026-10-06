@@ -285,8 +285,7 @@ export default function RecoveryOfficersScreen() {
     const q = search.trim().toLowerCase();
     return (
       (o.name || '').toLowerCase().includes(q) ||
-      (o.email || '').toLowerCase().includes(q) ||
-      (o.phone || '').toLowerCase().includes(q)
+      (o.email || '').toLowerCase().includes(q)
     );
   });
 
@@ -580,7 +579,7 @@ export default function RecoveryOfficersScreen() {
               </View>
               <TouchableOpacity style={styles.addBtn} onPress={openAdd}>
                 <PlusCircle size={16} color="#FFFFFF" />
-                <Text style={styles.addBtnText}>Add</Text>
+                <Text style={styles.addBtnText}>Add Recovery Officer</Text>
               </TouchableOpacity>
             </View>
           </View>

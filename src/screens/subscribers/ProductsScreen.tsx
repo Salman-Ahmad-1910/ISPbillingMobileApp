@@ -22,7 +22,6 @@ import {
   PackageOpen,
   Boxes,
   Package as PackageIcon,
-  Layers,
   Search,
   PlusCircle,
   ChevronDown,
@@ -30,7 +29,6 @@ import {
   ChevronRight,
   ArrowRight,
   Check,
-  Trash2,
 } from 'lucide-react-native';
 import {
   getProducts,
@@ -40,12 +38,8 @@ import {
   getBrands,
   getProductTypes,
   getUnitTypes,
-  getSerialNumberPool,
-  getNextSerialNumber,
-  addSerialNumbers,
-  deleteSerialNumberEntry,
 } from '../../api/inventory';
-import {Product, Brand, ProductType, UnitType, SerialNumberPoolEntry} from '../../types';
+import {Product, Brand, ProductType, UnitType} from '../../types';
 import {GradientButton} from '../../components/GradientButton';
 import {GradientView} from '../../components/GradientView';
 
@@ -54,6 +48,7 @@ const PAGE_SIZES = [5, 10, 20, 50, 100];
 type FilterOption = {label: string; value: string};
 
 const emptyForm: Partial<Product> = {
+  productId: '',
   name: '',
   category: '',
   barcode: '',
@@ -66,6 +61,8 @@ const emptyForm: Partial<Product> = {
   purchasePrice: 0,
   salePrice: 0,
   discount: 0,
+  currentSerialIndex: 0,
+  noSerialNumber: false,
 };
 
 function DoorMenuIcon({open}: {open: boolean}) {
@@ -127,19 +124,15 @@ export default function ProductsScreen() {
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<Partial<Product>>(emptyForm);
   const [saving, setSaving] = useState(false);
-  const [fetchingNextSn, setFetchingNextSn] = useState(false);
   const [selectSheet, setSelectSheet] = useState<{
     key: 'brandId' | 'productTypeId' | 'unitType';
     title: string;
     options: FilterOption[];
   } | null>(null);
-
-  // SN Pool modal state
-  const [snPoolOpen, setSnPoolOpen] = useState(false);
-  const [poolEntries, setPoolEntries] = useState<SerialNumberPoolEntry[]>([]);
-  const [poolLoading, setPoolLoading] = useState(false);
-  const [poolRaw, setPoolRaw] = useState('');
-  const [poolSaving, setPoolSaving] = useState(false);
+  const [addMoreSnOpen, setAddMoreSnOpen] = useState(false);
+  const [addMoreSnRaw, setAddMoreSnRaw] = useState('');
+  const [addMoreSnSaving, setAddMoreSnSaving] = useState(false);
+  const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
 
   const openDrawer = () => {
     nav.dispatch(DrawerActions.openDrawer());
@@ -233,15 +226,6 @@ export default function ProductsScreen() {
     setEditing(null);
     setForm({...emptyForm});
     setFormOpen(true);
-    setFetchingNextSn(true);
-    getNextSerialNumber()
-      .then(sn => {
-        if (sn) {
-          setForm(prev => ({...prev, serialNumber: sn}));
-        }
-      })
-      .catch(() => {})
-      .finally(() => setFetchingNextSn(false));
   };
 
   const openEdit = (product: Product) => {
@@ -307,11 +291,13 @@ export default function ProductsScreen() {
         productTypeName: form.productTypeName || '',
         category: selectedType?.name || form.productTypeName || form.category || '',
         unitType: form.unitType || 'piece',
-        serialNumber: (form.serialNumber || '').trim(),
+        serialNumber: form.noSerialNumber ? '' : (form.serialNumber || '').trim(),
         price: parseFloat(String(form.salePrice)) || parseFloat(String(form.price)) || 0,
         salePrice: parseFloat(String(form.salePrice)) || 0,
         purchasePrice: parseFloat(String(form.purchasePrice)) || 0,
         discount: parseFloat(String(form.discount)) || 0,
+        currentSerialIndex: form.currentSerialIndex ?? 0,
+        noSerialNumber: form.noSerialNumber ?? false,
       };
       if (editing) {
         await updateProduct(editing.id, payload);
@@ -329,75 +315,54 @@ export default function ProductsScreen() {
     }
   };
 
-  const loadPool = useCallback(async () => {
-    setPoolLoading(true);
+  const handleAddMoreSNs = async () => {
+    if (!editing) {return;}
+    const newSNs = addMoreSnRaw
+      .split(/[\s,\-]+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+    if (newSNs.length === 0) {return;}
+    setAddMoreSnSaving(true);
     try {
-      setPoolEntries(await getSerialNumberPool());
-    } catch {
-      Alert.alert('Error', 'Failed to load serial number pool');
-    } finally {
-      setPoolLoading(false);
-    }
-  }, []);
-
-  const openSnPool = () => {
-    setPoolRaw('');
-    setSnPoolOpen(true);
-    loadPool();
-  };
-
-  const parsedNumbers = useMemo(
-    () =>
-      poolRaw
-        .split(/[\s,;_/-]+/)
+      const existing = (editing.serialNumber || '')
+        .split(/[\s,\-]+/)
         .map(s => s.trim())
-        .filter(Boolean),
-    [poolRaw],
-  );
-  const uniqueCount = useMemo(() => new Set(parsedNumbers).size, [parsedNumbers]);
-  const availableCount = useMemo(
-    () => poolEntries.filter(e => e.status === 'available').length,
-    [poolEntries],
-  );
-
-  const handleAddPoolNumbers = async () => {
-    if (uniqueCount === 0) {
-      return;
-    }
-    setPoolSaving(true);
-    try {
-      await addSerialNumbers(parsedNumbers);
-      setPoolRaw('');
-      await loadPool();
+        .filter(Boolean);
+      const combined = [...existing, ...newSNs].join(', ');
+      const newStock = existing.length + newSNs.length;
+      await updateProduct(editing.id, {
+        ...editing,
+        serialNumber: combined,
+        stock: newStock,
+      });
+      setForm(prev => ({...prev, serialNumber: combined}));
+      setAddMoreSnRaw('');
+      setAddMoreSnOpen(false);
+      fetchData(false);
     } catch (err: any) {
       const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to add serial numbers';
       Alert.alert('Error', msg);
     } finally {
-      setPoolSaving(false);
+      setAddMoreSnSaving(false);
     }
-  };
-
-  const handleDeletePoolEntry = (entry: SerialNumberPoolEntry) => {
-    Alert.alert('Remove Serial Number', `Remove ${entry.serialNumber} from the pool?`, [
-      {text: 'Cancel', style: 'cancel'},
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteSerialNumberEntry(entry.id);
-            await loadPool();
-          } catch (err: any) {
-            const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to remove serial number';
-            Alert.alert('Error', msg);
-          }
-        },
-      },
-    ]);
   };
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const parsedSnCount = useMemo(() => {
+    const raw = String(form.serialNumber ?? '');
+    if (!raw.trim()) {return 0;}
+    return raw.split(/[\s,\-]+/).map(s => s.trim()).filter(Boolean).length;
+  }, [form.serialNumber]);
+
+  const currentFormSn = useMemo(() => {
+    const raw = String(form.serialNumber ?? '');
+    const sns = raw.split(/[\s,\-]+/).map(s => s.trim()).filter(Boolean);
+    if (sns.length === 0) {return '';}
+    const idx = form.currentSerialIndex ?? 0;
+    return sns[idx] || sns[0];
+  }, [form.serialNumber, form.currentSerialIndex]);
 
   const getVisiblePages = () => {
     const pages: number[] = [];
@@ -419,42 +384,96 @@ export default function ProductsScreen() {
 
   const renderItem = ({item}: {item: Product}) => {
     const typeName = item.productTypeName || item.category || '-';
+    const serialNumber = item.serialNumber || '';
+    const sns = serialNumber.split(/[\s,\-]+/).map(s => s.trim()).filter(Boolean);
+    const currentSn = sns.length > 0 ? sns[item.currentSerialIndex ?? 0] || sns[0] : '';
+    const totalSn = sns.length;
+    const displaySn = currentSn
+      ? totalSn > 1
+        ? `${currentSn} (${(item.currentSerialIndex ?? 0) + 1}/${totalSn})`
+        : currentSn
+      : '-';
+    const expandable = totalSn > 1;
+    const expanded = expandedProducts.has(item.id);
+    const price = item.salePrice ?? item.price;
+    const toggleExpand = () => {
+      if (!expandable) {
+        openEdit(item);
+        return;
+      }
+      setExpandedProducts(prev => {
+        const next = new Set(prev);
+        if (next.has(item.id)) {
+          next.delete(item.id);
+        } else {
+          next.add(item.id);
+        }
+        return next;
+      });
+    };
     return (
-      <TouchableOpacity style={styles.card} onPress={() => openEdit(item)}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.rowIndex} numberOfLines={1}>{item.barcode || '-'}</Text>
-          <View style={styles.cardInfo}>
-            <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+      <View style={styles.card}>
+        <TouchableOpacity activeOpacity={0.7} onPress={toggleExpand}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.rowIndex} numberOfLines={1}>{item.productId || '-'}</Text>
+            <View style={styles.cardInfo}>
+              <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+            </View>
+            {expandable ? (
+              <View style={styles.expandChip}>
+                <Text style={styles.expandChipText}>
+                  {expanded ? '−' : '+'}
+                </Text>
+              </View>
+            ) : null}
           </View>
-        </View>
-        <View style={styles.brandRow}>
-          <Text style={styles.brandName} numberOfLines={1}>{item.brandName || '-'}</Text>
-          <View style={styles.typeBadge}>
-            <Text style={styles.typeBadgeText} numberOfLines={1}>{typeName}</Text>
+          <View style={styles.brandRow}>
+            <Text style={styles.brandName} numberOfLines={1}>{item.brandName || '-'}</Text>
+            <View style={styles.typeBadge}>
+              <Text style={styles.typeBadgeText} numberOfLines={1}>{typeName}</Text>
+            </View>
           </View>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Purchase Price</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>
-            PKR {(item.purchasePrice || 0).toLocaleString()}
-          </Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Sale Price</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>
-            PKR {((item.salePrice ?? item.price) || 0).toLocaleString()}
-          </Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>SN / MAC</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>{item.serialNumber || '-'}</Text>
-        </View>
-        {(item.discount || 0) > 0 ? (
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>SN / MAC</Text>
+            <Text style={styles.infoValue} numberOfLines={1}>{displaySn}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Stock</Text>
+            <Text style={styles.infoValue} numberOfLines={1}>{item.stock || 0}</Text>
+          </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Discount</Text>
             <Text style={styles.infoValue} numberOfLines={1}>
               PKR {(item.discount || 0).toLocaleString()}
             </Text>
+          </View>
+        </TouchableOpacity>
+        {expanded && expandable ? (
+          <View style={styles.entriesBox}>
+            <View style={styles.entriesHeaderRow}>
+              <View style={styles.entriesTitleRow}>
+                <Text style={styles.entriesHeader}>#</Text>
+                <Text style={styles.entriesHeader}>Serial entries ({totalSn})</Text>
+              </View>
+            </View>
+            <View style={styles.entriesTable}>
+              <View style={styles.entriesRowHead}>
+                <Text style={[styles.entryCell, styles.entryNum]}>#</Text>
+                <Text style={[styles.entryCell, styles.entryProduct]}>Product</Text>
+                <Text style={[styles.entryCell, styles.entrySn]}>SN / MAC</Text>
+                <Text style={[styles.entryCell, styles.entryPrice]}>Price</Text>
+              </View>
+              {sns.map((sn, i) => (
+                <View key={`${item.id}-${i}-${sn}`} style={styles.entriesRow}>
+                  <Text style={[styles.entryCell, styles.entryNum]}>{i + 1}</Text>
+                  <Text style={[styles.entryCell, styles.entryProduct]} numberOfLines={1}>{item.name}</Text>
+                  <Text style={[styles.entryCell, styles.entrySn]} numberOfLines={1}>{sn}</Text>
+                  <Text style={[styles.entryCell, styles.entryPrice]}>
+                    {price != null ? `PKR ${price.toLocaleString()}` : '—'}
+                  </Text>
+                </View>
+              ))}
+            </View>
           </View>
         ) : null}
         <View style={styles.cardFooter}>
@@ -469,7 +488,7 @@ export default function ProductsScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </TouchableOpacity>
+      </View>
     );
   };
 
@@ -591,7 +610,7 @@ export default function ProductsScreen() {
               ))}
             </ScrollView>
 
-            {/* Search + SN Pool + Add */}
+            {/* Search + Add */}
             <View style={styles.toolbar}>
               <View style={styles.searchBox}>
                 <Search size={16} color="#6B7280" />
@@ -603,10 +622,6 @@ export default function ProductsScreen() {
                   onChangeText={setSearch}
                 />
               </View>
-              <TouchableOpacity style={styles.poolBtn} onPress={openSnPool}>
-                <Layers size={15} color="#7C3AED" />
-                <Text style={styles.poolBtnText}>Pool</Text>
-              </TouchableOpacity>
               <GradientButton
                 colors={['#10B981', '#16A34A']}
                 style={styles.addBtn}
@@ -789,7 +804,18 @@ export default function ProductsScreen() {
               </TouchableOpacity>
             </View>
             <ScrollView contentContainerStyle={styles.formBody} keyboardShouldPersistTaps="handled">
-              {formRow('Product Barcode', form.barcode, t => setField('barcode', t), 'e.g., 8901234567890')}
+              {/* Product ID - auto-generated, read-only */}
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>Product ID</Text>
+                <View style={[styles.formInput, styles.formInputReadonly]}>
+                  <Text style={styles.formInputReadonlyText}>
+                    {editing?.productId || 'Auto-generated (Pr-001)'}
+                  </Text>
+                </View>
+                <Text style={styles.formHint}>
+                  Auto-generated as Pr-001, Pr-002, ... The "Pr-" prefix is added automatically.
+                </Text>
+              </View>
               {formRow('Product Name *', form.name, t => setField('name', t), 'e.g., TP-Link Router')}
               {selectField(
                 'Brand',
@@ -816,29 +842,70 @@ export default function ProductsScreen() {
                   {label: 'Per Meter', value: 'meter'},
                 ], form.unitType || 'piece', v => setField('unitType', v))
               )}
+              {/* SN / MAC Numbers */}
               <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>
-                  SN / MAC{!editing ? '  (auto from pool)' : ''}
-                </Text>
-                <View style={styles.formInputWrap}>
-                  <TextInput
-                    style={styles.formInput}
-                    value={String(form.serialNumber ?? '')}
-                    onChangeText={t => setField('serialNumber', t)}
-                    placeholder="e.g., 00:1A:2B:3C:4D:5E"
-                    placeholderTextColor="#9CA3AF"
-                    editable={!fetchingNextSn}
-                  />
-                  {fetchingNextSn ? (
-                    <ActivityIndicator size="small" color="#10B981" style={styles.inputSpinner} />
+                <Text style={styles.formLabel}>SN / MAC Numbers</Text>
+                {!editing ? (
+                  <View style={styles.checkboxRow}>
+                    <TouchableOpacity
+                      style={[styles.checkbox, form.noSerialNumber && styles.checkboxChecked]}
+                      onPress={() => {
+                        const val = !form.noSerialNumber;
+                        setField('noSerialNumber', val);
+                        if (val) {
+                          setField('serialNumber', '');
+                        }
+                      }}>
+                      {form.noSerialNumber ? (
+                        <Text style={styles.checkboxCheck}>✓</Text>
+                      ) : null}
+                    </TouchableOpacity>
+                    <Text style={styles.checkboxLabel}>Add without serial number</Text>
+                  </View>
+                ) : null}
+                {editing && currentFormSn ? (
+                  <View style={styles.snCurrentBox}>
+                    <Text style={styles.snCurrentLabel}>Current SN / MAC (will be sold next)</Text>
+                    <Text style={styles.snCurrentValue}>{currentFormSn}</Text>
+                  </View>
+                ) : null}
+                <TextInput
+                  style={[styles.formInput, styles.formInputMultiline]}
+                  value={String(form.serialNumber ?? '')}
+                  onChangeText={t => setField('serialNumber', t)}
+                  placeholder="e.g., 00:1A:2B:3C:4D:5E, AA:BB:CC:DD:EE:FF, 11-22-33-44-55-66"
+                  placeholderTextColor="#9CA3AF"
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                  editable={!editing && !form.noSerialNumber}
+                />
+                <View style={styles.snHelperRow}>
+                  <Text style={styles.formHint}>
+                    Separate multiple SN/MAC numbers with comma, space, or dash
+                  </Text>
+                  {parsedSnCount > 0 && !editing ? (
+                    <Text style={styles.snCountText}>
+                      {parsedSnCount} SN/MAC{parsedSnCount !== 1 ? 's' : ''} → stock = {parsedSnCount}
+                    </Text>
                   ) : null}
                 </View>
+                {editing ? (
+                  <Text style={styles.formHint}>
+                    SN/MAC cannot be changed after creation. Current index: {(form.currentSerialIndex ?? 0) + 1} of {parsedSnCount}
+                  </Text>
+                ) : null}
+                {editing ? (
+                  <TouchableOpacity
+                    style={styles.addMoreSnBtn}
+                    onPress={() => {
+                      setAddMoreSnRaw('');
+                      setAddMoreSnOpen(true);
+                    }}>
+                    <Text style={styles.addMoreSnBtnText}>+ Add More SNs</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
-              <View style={styles.formRow2}>
-                {formRow('Purchase Price (PKR)', form.purchasePrice, t => setField('purchasePrice', t), '0', 'numeric')}
-                {formRow('Sale Price (PKR)', form.salePrice, t => setField('salePrice', t), '0', 'numeric')}
-              </View>
-              {formRow('Discount (PKR)', form.discount, t => setField('discount', t), '0', 'numeric')}
               <View style={styles.formActions}>
                 <TouchableOpacity
                   style={styles.cancelBtn}
@@ -854,7 +921,7 @@ export default function ProductsScreen() {
                   {saving ? (
                     <ActivityIndicator color="#FFFFFF" size="small" />
                   ) : (
-                    <Text style={styles.saveBtnText}>{editing ? 'Update' : 'Save Product'}</Text>
+                    <Text style={styles.saveBtnText}>{editing ? 'Update Product' : 'Add Product'}</Text>
                   )}
                 </GradientButton>
               </View>
@@ -905,101 +972,65 @@ export default function ProductsScreen() {
         </View>
       </Modal>
 
-      {/* SN Number Pool modal */}
+      {/* Add More SNs modal */}
       <Modal
-        visible={snPoolOpen}
+        visible={addMoreSnOpen}
         transparent
         animationType="slide"
-        onRequestClose={() => setSnPoolOpen(false)}>
+        onRequestClose={() => setAddMoreSnOpen(false)}>
         <View style={styles.formOverlay}>
-          <View style={styles.poolSheet}>
+          <View style={styles.addMoreSheet}>
             <View style={styles.formSheetHeader}>
               <View style={styles.formSheetTitleRow}>
-                <GradientView colors={['#A855F7', '#7C3AED']} style={styles.formSheetIcon}>
-                  <Layers size={16} color="#FFFFFF" />
+                <GradientView colors={['#10B981', '#16A34A']} style={styles.formSheetIcon}>
+                  <PackageOpen size={16} color="#FFFFFF" />
                 </GradientView>
-                <Text style={styles.formSheetTitle}>SN Number Pool</Text>
+                <Text style={styles.formSheetTitle}>Add Serial Numbers</Text>
               </View>
-              <TouchableOpacity onPress={() => setSnPoolOpen(false)}>
+              <TouchableOpacity onPress={() => setAddMoreSnOpen(false)}>
                 <Text style={styles.sheetClose}>✕</Text>
               </TouchableOpacity>
             </View>
             <ScrollView contentContainerStyle={styles.formBody} keyboardShouldPersistTaps="handled">
-              <Text style={styles.poolDescription}>
-                Add many serial numbers at once. Separate each one with a space, dash (-), comma, or new line.
-                When a new product is added with an empty SN field, the next available number is assigned automatically.
+              <Text style={styles.formHint}>
+                Add new serial numbers to <Text style={{fontWeight: '600', color: '#111827'}}>{editing?.name}</Text>. Separate each one with a comma or space.
               </Text>
-
-              <View style={styles.poolStatsRow}>
-                <Text style={styles.poolStatsText}>
-                  Available: <Text style={styles.poolStatsStrong}>{availableCount}</Text> / {poolEntries.length} total
-                </Text>
-                {uniqueCount > 0 ? (
-                  <Text style={styles.poolStatsText}>
-                    Parsed: <Text style={styles.poolStatsStrong}>{uniqueCount}</Text> unique
-                  </Text>
-                ) : null}
-              </View>
-
               <TextInput
-                style={styles.poolTextarea}
-                placeholder={'e.g., SN-1001 SN-1002 SN-1003\nSN1004-SN1005, SN1006'}
+                style={[styles.formInput, styles.formInputMultiline]}
+                placeholder="e.g., SN-1001 SN-1002 SN-1003"
                 placeholderTextColor="#9CA3AF"
                 multiline
+                numberOfLines={3}
                 textAlignVertical="top"
-                value={poolRaw}
-                onChangeText={setPoolRaw}
+                value={addMoreSnRaw}
+                onChangeText={setAddMoreSnRaw}
               />
-
-              <GradientButton
-                colors={['#A855F7', '#7C3AED']}
-                style={styles.poolAddBtn}
-                onPress={handleAddPoolNumbers}
-                disabled={poolSaving || uniqueCount === 0}>
-                {poolSaving ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <Text style={styles.saveBtnText}>
-                    Add {uniqueCount || ''} Serial Number{uniqueCount === 1 ? '' : 's'}
-                  </Text>
-                )}
-              </GradientButton>
-
-              <View style={styles.poolListHeader}>
-                <Text style={styles.poolListHeaderText}>Serial Number</Text>
-                <Text style={styles.poolListHeaderText}>Status</Text>
-                <Text style={styles.poolListHeaderText}>Action</Text>
+              {addMoreSnRaw.trim() ? (
+                <Text style={styles.formHint}>
+                  {addMoreSnRaw.split(/[\s,\-]+/).map(s => s.trim()).filter(Boolean).length} serial number(s) will be added
+                </Text>
+              ) : null}
+              <View style={styles.formActions}>
+                <TouchableOpacity
+                  style={styles.cancelBtn}
+                  onPress={() => setAddMoreSnOpen(false)}
+                  disabled={addMoreSnSaving}>
+                  <Text style={styles.cancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <GradientButton
+                  colors={['#10B981', '#16A34A']}
+                  style={styles.saveBtn}
+                  onPress={handleAddMoreSNs}
+                  disabled={addMoreSnSaving || addMoreSnRaw.split(/[\s,\-]+/).map(s => s.trim()).filter(Boolean).length === 0}>
+                  {addMoreSnSaving ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.saveBtnText}>
+                      Add {addMoreSnRaw.split(/[\s,\-]+/).map(s => s.trim()).filter(Boolean).length || ''} SN(s)
+                    </Text>
+                  )}
+                </GradientButton>
               </View>
-              {poolLoading ? (
-                <View style={styles.poolEmpty}>
-                  <ActivityIndicator size="small" color="#A855F7" />
-                </View>
-              ) : poolEntries.length === 0 ? (
-                <View style={styles.poolEmpty}>
-                  <Text style={styles.sheetEmptyText}>No serial numbers in the pool yet.</Text>
-                </View>
-              ) : (
-                poolEntries.map(entry => {
-                  const isAvailable = entry.status === 'available';
-                  return (
-                    <View key={entry.id} style={styles.poolEntryRow}>
-                      <Text style={styles.poolEntrySerial} numberOfLines={1}>
-                        {entry.serialNumber}
-                      </Text>
-                      <View style={[styles.poolBadge, isAvailable ? styles.poolBadgeAvailable : styles.poolBadgeUsed]}>
-                        <Text style={[styles.poolBadgeText, isAvailable ? styles.poolBadgeTextAvailable : styles.poolBadgeTextUsed]}>
-                          {isAvailable ? 'Available' : 'Used'}
-                        </Text>
-                      </View>
-                      <TouchableOpacity
-                        style={styles.poolDeleteBtn}
-                        onPress={() => handleDeletePoolEntry(entry)}>
-                        <Trash2 size={16} color="#EF4444" />
-                      </TouchableOpacity>
-                    </View>
-                  );
-                })
-              )}
             </ScrollView>
           </View>
         </View>
@@ -1114,18 +1145,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   searchInput: {flex: 1, paddingVertical: 10, fontSize: 14, color: '#111827', marginLeft: 8},
-  poolBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#C4B5FD',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    flexShrink: 0,
-  },
-  poolBtnText: {color: '#7C3AED', fontSize: 12, fontWeight: '600', marginLeft: 5},
   addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1301,7 +1320,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     maxHeight: '92%',
   },
-  poolSheet: {
+  addMoreSheet: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -1334,8 +1353,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB',
     paddingHorizontal: 14, paddingVertical: 10, fontSize: 15, color: '#111827',
   },
-  formInputWrap: {position: 'relative', justifyContent: 'center'},
-  inputSpinner: {position: 'absolute', right: 12},
   formSelect: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1378,56 +1395,80 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   saveBtnText: {color: '#FFFFFF', fontSize: 14, fontWeight: '600'},
-  poolDescription: {fontSize: 12, color: '#6B7280', marginBottom: 12},
-  poolStatsRow: {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10},
-  poolStatsText: {fontSize: 12, color: '#6B7280'},
-  poolStatsStrong: {color: '#111827', fontWeight: '700'},
-  poolTextarea: {
-    backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB',
-    paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: '#111827',
-    minHeight: 100, marginBottom: 12,
-    fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}),
+  formRow3: {flexDirection: 'row', gap: 8, alignItems: 'flex-start'},
+  formHint: {fontSize: 11, color: '#9CA3AF', marginTop: 4},
+  formInputReadonly: {backgroundColor: '#F3F4F6', borderColor: '#E5E7EB'},
+  formInputReadonlyText: {fontSize: 14, color: '#9CA3AF'},
+  formInputMultiline: {minHeight: 80, paddingTop: 10, textAlignVertical: 'top'},
+  checkboxRow: {flexDirection: 'row', alignItems: 'center', marginBottom: 8, gap: 8},
+  checkbox: {
+    width: 20, height: 20, borderRadius: 4, borderWidth: 2, borderColor: '#D1D5DB',
+    justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFFFFF',
   },
-  poolAddBtn: {
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginBottom: 16,
+  checkboxChecked: {backgroundColor: '#10B981', borderColor: '#10B981'},
+  checkboxCheck: {fontSize: 12, color: '#FFFFFF', fontWeight: '700'},
+  checkboxLabel: {fontSize: 13, color: '#374151', fontWeight: '500'},
+  snCurrentBox: {
+    backgroundColor: '#ECFDF5', borderRadius: 8, borderWidth: 1, borderColor: '#A7F3D0',
+    padding: 10, marginBottom: 8,
   },
-  poolListHeader: {
+  snCurrentLabel: {fontSize: 11, fontWeight: '600', color: '#047857'},
+  snCurrentValue: {fontSize: 14, fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}), fontWeight: '600', color: '#065F46', marginTop: 2},
+  snHelperRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'},
+  snCountText: {fontSize: 11, fontWeight: '600', color: '#059669'},
+  addMoreSnBtn: {
+    marginTop: 8, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
+    backgroundColor: '#EEF2FF', alignSelf: 'flex-start',
+  },
+  addMoreSnBtnText: {fontSize: 13, fontWeight: '600', color: '#4F46E5'},
+  expandChip: {
+    width: 26, height: 26, borderRadius: 8, backgroundColor: '#ECFDF5',
+    justifyContent: 'center', alignItems: 'center', marginLeft: 8,
+  },
+  expandChipText: {fontSize: 18, fontWeight: '700', color: '#10B981'},
+  entriesBox: {
+    marginTop: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 10,
+    backgroundColor: '#F9FAFB',
+  },
+  entriesHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  entriesTitleRow: {flexDirection: 'row', alignItems: 'center', gap: 6},
+  entriesHeader: {fontSize: 11, fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.4},
+  entriesTable: {
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+  },
+  entriesRowHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
   },
-  poolListHeaderText: {flex: 1, fontSize: 12, fontWeight: '600', color: '#6B7280'},
-  poolEmpty: {paddingVertical: 24, alignItems: 'center'},
-  poolEntryRow: {
+  entriesRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
-  poolEntrySerial: {
-    flex: 1,
-    fontSize: 13,
-    color: '#374151',
-    fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}),
-  },
-  poolBadge: {paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8, marginRight: 8},
-  poolBadgeAvailable: {backgroundColor: '#D1FAE5'},
-  poolBadgeUsed: {backgroundColor: '#F3F4F6'},
-  poolBadgeText: {fontSize: 11, fontWeight: '600'},
-  poolBadgeTextAvailable: {color: '#047857'},
-  poolBadgeTextUsed: {color: '#6B7280'},
-  poolDeleteBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: '#FEF2F2',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  entryCell: {fontSize: 12, color: '#374151'},
+  entryNum: {width: 22, color: '#9CA3AF', fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'})},
+  entryProduct: {flex: 1.2, fontWeight: '500', paddingRight: 8},
+  entrySn: {flex: 1.5, fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}), paddingRight: 8},
+  entryPrice: {width: 80, textAlign: 'right', color: '#4B5563'},
 });

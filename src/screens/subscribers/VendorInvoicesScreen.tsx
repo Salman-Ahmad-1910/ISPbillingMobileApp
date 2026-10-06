@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -18,11 +18,11 @@ import {
 import {useFocusEffect, useNavigation, DrawerActions} from '@react-navigation/native';
 import {useDrawerStatus} from '@react-navigation/drawer';
 import Svg, {Rect, Defs, LinearGradient, Stop} from 'react-native-svg';
+import RNPrint from 'react-native-print';
 import {
   ShoppingCart,
   DollarSign,
   Receipt,
-  FileText,
   Building2,
   Calendar,
   Search,
@@ -35,6 +35,10 @@ import {
   ArrowRight,
   Check,
   Filter,
+  Printer,
+  Package,
+  Percent,
+  Plus,
 } from 'lucide-react-native';
 import {
   getVendorInvoices,
@@ -44,9 +48,10 @@ import {
   getVendors,
   getProducts,
 } from '../../api/inventory';
-import {VendorInvoice, Vendor, Product} from '../../types';
+import {VendorInvoice, Vendor, Product, VendorInvoiceItem, Company} from '../../types';
 import {GradientButton} from '../../components/GradientButton';
 import {GradientView} from '../../components/GradientView';
+import {useAuth} from '../../context/AuthContext';
 
 const PAGE_SIZES = [5, 10, 20, 50, 100];
 
@@ -62,6 +67,23 @@ const unitTypeLabel = (u?: string) =>
         : u === 'liter'
           ? 'Per Liter'
           : u || '—';
+
+function parseSNs(raw?: string | null): string[] {
+  if (!raw) return [];
+  return String(raw)
+    .split(/[\s,\-]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function escapeHtml(value: string): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 function DoorMenuIcon({open}: {open: boolean}) {
   const slide = useRef(new Animated.Value(open ? 1 : 0)).current;
@@ -103,17 +125,35 @@ function VendorInvoicesDivider() {
   );
 }
 
+interface FormEntry {
+  productId: string;
+  productName: string;
+  quantity: string;
+  unitPrice: string;
+  sellingPrice: string;
+  unitType: string;
+  serialNumber: string;
+  expandedItems: VendorInvoiceItem[];
+}
+
+const emptyEntry = (): FormEntry => ({
+  productId: '',
+  productName: '',
+  quantity: '1',
+  unitPrice: '',
+  sellingPrice: '',
+  unitType: 'piece',
+  serialNumber: '',
+  expandedItems: [],
+});
+
 interface FormState {
   vendorId: string;
   vendorName: string;
   invoiceDate: string;
   batch: string;
-  productId: string;
-  productName: string;
-  quantity: string;
-  unitPrice: string;
-  unitType: string;
-  serialNumber: string;
+  discount: string;
+  entries: FormEntry[];
 }
 
 const emptyForm: FormState = {
@@ -121,17 +161,145 @@ const emptyForm: FormState = {
   vendorName: '',
   invoiceDate: new Date().toISOString().split('T')[0],
   batch: '',
-  productId: '',
-  productName: '',
-  quantity: '1',
-  unitPrice: '',
-  unitType: '',
-  serialNumber: '',
+  discount: '',
+  entries: [emptyEntry()],
 };
+
+function buildInvoicePrintHtml(
+  invoice: VendorInvoice,
+  vendor: Vendor | undefined,
+  company: Company | null,
+): string {
+  const companyName = company?.name || 'Fintrack ERP';
+  const companyAddress = company?.address || '';
+  const companyPhone = company?.contact1 || company?.contact2 || '';
+  const discount = invoice.discount || 0;
+  const subtotal = (invoice.items || []).reduce(
+    (sum, item) => sum + (Number(item.subtotal) || 0),
+    0,
+  ) || invoice.totalAmount;
+  const total = invoice.totalAmount;
+
+  const expandedRows: {productName: string; serialNumber: string; quantity: number; unitType: string; unitPrice: number; subtotal: number}[] = [];
+  for (const item of invoice.items || []) {
+    const sns = parseSNs(item.serialNumber);
+    const perUnit = Number(item.purchasePrice ?? item.unitPrice) || 0;
+    if (sns.length === 0) {
+      expandedRows.push({productName: item.productName, serialNumber: '-', quantity: item.quantity || 1, unitType: item.unitType || 'pcs', unitPrice: perUnit, subtotal: perUnit * (item.quantity || 1)});
+    } else {
+      for (const sn of sns) {
+        expandedRows.push({productName: item.productName, serialNumber: sn, quantity: 1, unitType: item.unitType || 'pcs', unitPrice: perUnit, subtotal: perUnit});
+      }
+    }
+  }
+
+  const rowsHtml = expandedRows
+    .map(
+      row => `<tr class="${row.serialNumber === '-' ? 'no-sn' : ''}">
+        <td>${escapeHtml(row.productName)}</td>
+        <td class="mono">${escapeHtml(row.serialNumber)}</td>
+        <td class="c">${row.quantity}</td>
+        <td class="c">${row.unitType === 'meter' ? 'Mtr' : 'Pcs'}</td>
+        <td class="r">${row.unitPrice.toFixed(2)}</td>
+        <td class="r">${row.subtotal.toFixed(2)}</td>
+      </tr>`,
+    )
+    .join('');
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body { font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; color: #111827; margin: 0; padding: 24px; }
+  .container { max-width: 700px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 24px; border-bottom: 2px solid #111827; margin-bottom: 32px; }
+  .company h1 { font-size: 22px; font-weight: 800; margin: 0 0 4px 0; }
+  .company p { color: #4B5563; font-size: 13px; margin: 2px 0; }
+  .title { font-size: 32px; font-weight: 800; letter-spacing: 2px; color: #059669; margin: 0; }
+  .meta { font-size: 13px; margin-top: 12px; color: #6B7280; text-align: right; }
+  .meta span { color: #111827; font-weight: 600; }
+  h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: #374151; margin: 0 0 8px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 16px; }
+  th { background: #059669; color: #fff; text-align: left; padding: 12px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  th.r { text-align: right; } th.c { text-align: center; }
+  td { border: 1px solid #D1D5DB; padding: 10px; }
+  td.r { text-align: right; font-weight: 600; } td.c { text-align: center; } td.mono { font-family: monospace; font-size: 12px; }
+  tr.no-sn td { color: #6B7280; }
+  tfoot td { background: #F9FAFB; font-weight: 800; }
+  footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid #D1D5DB; }
+  .sig { display: flex; justify-content: space-between; margin-top: 48px; }
+  .sig div { width: 200px; text-align: center; }
+  .sig .line { border-bottom: 1px solid #111827; height: 40px; }
+  .sig p { font-size: 11px; color: #6B7280; margin: 4px 0 0 0; }
+  .center { text-align: center; margin-top: 24px; color: #6B7280; }
+  .center b { font-size: 16px; color: #111827; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="company">
+        <h1>${escapeHtml(companyName)}</h1>
+        ${companyAddress ? `<p>${escapeHtml(companyAddress)}</p>` : ''}
+        ${companyPhone ? `<p>Phone: ${escapeHtml(companyPhone)}</p>` : ''}
+      </div>
+      <div>
+        <h2 class="title">VENDOR INVOICE</h2>
+        <div class="meta">
+          <div>Invoice #: <span>${escapeHtml(invoice.invoiceNumber)}</span></div>
+          <div>Date: <span>${escapeHtml(invoice.invoiceDate)}</span></div>
+          <div>Vendor: <span>${escapeHtml(vendor?.name || invoice.vendorName)}</span></div>
+          ${discount > 0 ? `<div>Discount: <span>${discount.toFixed(2)}</span></div>` : ''}
+        </div>
+      </div>
+    </header>
+
+    <h3>Product Details</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>SN / MAC</th>
+          <th class="c">Qty</th>
+          <th class="c">Unit</th>
+          <th class="r">Price</th>
+          <th class="r">Total</th>
+        </tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+      <tfoot>
+        ${discount > 0 ? `<tr><td colspan="5">SUBTOTAL</td><td class="r">${subtotal.toFixed(2)}</td></tr>` : ''}
+        ${discount > 0 ? `<tr><td colspan="5">DISCOUNT</td><td class="r">- ${discount.toFixed(2)}</td></tr>` : ''}
+        <tr><td colspan="5">${discount > 0 ? 'TOTAL' : 'TOTAL'}</td><td class="r">${total.toFixed(2)}</td></tr>
+      </tfoot>
+    </table>
+
+    <footer>
+      <div class="sig">
+        <div>
+          <div class="line"></div>
+          <p>Company Stamp</p>
+        </div>
+        <div>
+          <div class="line"></div>
+          <p>Vendor Signature</p>
+        </div>
+      </div>
+      <div class="center">
+        <b>${escapeHtml(companyName)}</b>
+        ${companyPhone ? `<p>Phone: ${escapeHtml(companyPhone)}</p>` : ''}
+      </div>
+    </footer>
+  </div>
+</body>
+</html>`;
+}
 
 export default function VendorInvoicesScreen() {
   const nav = useNavigation();
   const drawerStatus = useDrawerStatus();
+  const {companyId, companies} = useAuth();
   const [items, setItems] = useState<VendorInvoice[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -150,8 +318,13 @@ export default function VendorInvoicesScreen() {
   const [editing, setEditing] = useState<VendorInvoice | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState<'vendor' | 'product' | null>(null);
+  const [pickerTarget, setPickerTarget] = useState<
+    {kind: 'vendor'} | {kind: 'product'; index: number} | null
+  >(null);
   const [pickerQuery, setPickerQuery] = useState('');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [printTarget, setPrintTarget] = useState<VendorInvoice | null>(null);
+  const [printing, setPrinting] = useState(false);
 
   const openDrawer = () => {
     nav.dispatch(DrawerActions.openDrawer());
@@ -227,66 +400,193 @@ export default function VendorInvoicesScreen() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const getVisiblePages = () => {
-    const pages: number[] = [];
-    const startPage = Math.max(1, currentPage - 3);
-    const endPage = Math.min(totalPages, currentPage + 3);
-    for (let i = startPage; i <= endPage; i++) {
-      pages.push(i);
-    }
-    return pages;
+  const getAvailableSNs = useCallback(
+    (productId: string, excludeEntryIndex: number): string[] => {
+      const product = products.find(p => p.id === productId);
+      if (!product) return [];
+      const allSNs = parseSNs(product.serialNumber);
+      const usedByOthers = new Set<string>();
+      form.entries.forEach((entry, i) => {
+        if (i === excludeEntryIndex) return;
+        if (entry.productId === productId) {
+          entry.expandedItems.forEach(item => {
+            parseSNs(item.serialNumber).forEach(sn => usedByOthers.add(sn));
+          });
+        }
+      });
+      return allSNs.filter(sn => !usedByOthers.has(sn));
+    },
+    [products, form.entries],
+  );
+
+  const entrySubtotal = (entry: FormEntry) =>
+    entry.expandedItems.reduce((s, item) => s + (Number(item.subtotal) || 0), 0);
+
+  const formSubtotal = useMemo(
+    () => form.entries.reduce((sum, entry) => sum + entrySubtotal(entry), 0),
+    [form.entries],
+  );
+
+  const formDiscount = parseFloat(form.discount) || 0;
+  const totalAmount = Math.max(0, formSubtotal - formDiscount);
+
+  const updateEntry = (index: number, field: keyof FormEntry, value: any) => {
+    setForm(prev => {
+      const updated = prev.entries.map(entry => ({...entry}));
+
+      if (field === 'productId') {
+        const product = products.find(p => p.id === value);
+        if (!product) return prev;
+        const unitPrice = Number(product.purchasePrice || product.price) || 0;
+        const sellingPrice = Number(product.salePrice || product.price) || 0;
+        const usedByOthers = new Set<string>();
+        prev.entries.forEach((entry, i) => {
+          if (i === index) return;
+          if (entry.productId === value) {
+            entry.expandedItems.forEach(item => {
+              parseSNs(item.serialNumber).forEach(sn => usedByOthers.add(sn));
+            });
+          }
+        });
+        const allSNs = parseSNs(product.serialNumber);
+        const availableSNs = allSNs.filter(sn => !usedByOthers.has(sn));
+        const maxQty = availableSNs.length;
+        const qty =
+          availableSNs.length > 0
+            ? Math.max(1, Math.min(Number(updated[index].quantity) || 1, maxQty))
+            : Math.max(1, Number(updated[index].quantity) || 1);
+        const selectedSNs = availableSNs.slice(0, qty);
+        const snString = selectedSNs.join(', ');
+        const item: VendorInvoiceItem = {
+          productId: value,
+          productName: product.name,
+          quantity: qty,
+          unitPrice,
+          purchasePrice: unitPrice,
+          sellingPrice,
+          unitType: product.unitType || 'piece',
+          subtotal: unitPrice * qty,
+          serialNumber: snString,
+        };
+        updated[index] = {
+          ...updated[index],
+          productId: value,
+          productName: product.name,
+          unitType: product.unitType || 'piece',
+          unitPrice: String(unitPrice),
+          sellingPrice: String(sellingPrice),
+          quantity: String(qty),
+          serialNumber: snString,
+          expandedItems: [item],
+        };
+      } else if (field === 'quantity') {
+        const productId = updated[index].productId;
+        if (!productId) return prev;
+        const availableSNs = getAvailableSNs(productId, index);
+        const maxQty = availableSNs.length;
+        const qty =
+          availableSNs.length > 0
+            ? Math.max(1, Math.min(Number(value) || 1, maxQty))
+            : Math.max(1, Number(value) || 1);
+        const unitPrice = parseFloat(updated[index].unitPrice) || 0;
+        const sellingPrice = parseFloat(updated[index].sellingPrice) || 0;
+        const snString = availableSNs.slice(0, qty).join(', ');
+        const item: VendorInvoiceItem = {
+          productId,
+          productName: updated[index].productName,
+          quantity: qty,
+          unitPrice,
+          purchasePrice: unitPrice,
+          sellingPrice,
+          unitType: updated[index].unitType,
+          subtotal: unitPrice * qty,
+          serialNumber: snString,
+        };
+        updated[index] = {
+          ...updated[index],
+          quantity: String(qty),
+          serialNumber: snString,
+          expandedItems: [item],
+        };
+      } else if (field === 'unitPrice') {
+        const price = parseFloat(value) || 0;
+        updated[index] = {
+          ...updated[index],
+          unitPrice: String(price),
+          expandedItems: updated[index].expandedItems.map(item => ({
+            ...item,
+            unitPrice: price,
+            purchasePrice: price,
+            subtotal: price * (Number(item.quantity) || 1),
+          })),
+        };
+      } else if (field === 'sellingPrice') {
+        const price = parseFloat(value) || 0;
+        updated[index] = {
+          ...updated[index],
+          sellingPrice: String(price),
+          expandedItems: updated[index].expandedItems.map(item => ({
+            ...item,
+            sellingPrice: price,
+          })),
+        };
+      }
+
+      return {...prev, entries: updated};
+    });
   };
 
-  const handlePageSubmit = () => {
-    const page = parseInt(pageInput, 10);
-    if (page && page >= 1 && page <= totalPages) {
-      setCurrentPage(page);
-      setPageInput('');
-    }
+  const addEntry = () => {
+    setForm(prev => ({...prev, entries: [...prev.entries, emptyEntry()]}));
   };
 
-  const setField = (key: keyof FormState, value: string) => {
-    setForm(prev => ({...prev, [key]: value}));
+  const removeEntry = (index: number) => {
+    setForm(prev => {
+      let entries = prev.entries.filter((_, i) => i !== index);
+      if (entries.length === 0) {
+        entries = [emptyEntry()];
+      }
+      return {...prev, entries};
+    });
   };
-
-  const filteredVendors = vendors.filter(v => {
-    const q = pickerQuery.trim().toLowerCase();
-    if (!q) return true;
-    return (v.name || '').toLowerCase().includes(q);
-  });
-
-  const filteredProducts = products.filter(p => {
-    const q = pickerQuery.trim().toLowerCase();
-    if (!q) return true;
-    return (p.name || '').toLowerCase().includes(q);
-  });
 
   const openAdd = () => {
     setEditing(null);
-    setForm({...emptyForm});
+    setForm({...emptyForm, entries: [emptyEntry()]});
     setFormOpen(true);
   };
 
   const openEdit = (invoice: VendorInvoice) => {
     setEditing(invoice);
-    const item = invoice.items?.[0];
-    setForm({
+    const grouped = new Map<string, FormEntry>();
+    for (const item of invoice.items || []) {
+      const key = item.productId;
+      if (grouped.has(key)) {
+        grouped.get(key)!.expandedItems.push(item);
+      } else {
+        grouped.set(key, {
+          productId: key,
+          productName: item.productName,
+          quantity: String(item.quantity || 1),
+          unitPrice: String(item.purchasePrice ?? item.unitPrice ?? ''),
+          sellingPrice: String(item.sellingPrice ?? ''),
+          unitType: item.unitType || 'piece',
+          serialNumber: parseSNs(item.serialNumber).join(', '),
+          expandedItems: [item],
+        });
+      }
+    }
+    setForm(prev => ({
+      ...prev,
       vendorId: invoice.vendorId || '',
       vendorName: invoice.vendorName || '',
       invoiceDate: invoice.invoiceDate || new Date().toISOString().split('T')[0],
       batch: invoice.batch || '',
-      productId: item?.productId || '',
-      productName: item?.productName || '',
-      quantity: String(item?.quantity || 1),
-      unitPrice: item?.unitPrice != null ? String(item.unitPrice) : '',
-      unitType: item?.unitType || '',
-      serialNumber: item?.serialNumber || '',
-    });
+      discount: String(invoice.discount || ''),
+      entries: grouped.size > 0 ? Array.from(grouped.values()) : [emptyEntry()],
+    }));
     setFormOpen(true);
   };
-
-  const subtotal = (parseFloat(form.quantity) || 0) * (parseFloat(form.unitPrice) || 0);
-  const totalAmount = subtotal;
 
   const handleSave = async () => {
     if (!form.vendorId) {
@@ -297,18 +597,13 @@ export default function VendorInvoicesScreen() {
       Alert.alert('Error', 'Buying date is required');
       return;
     }
-    if (!form.productId) {
-      Alert.alert('Error', 'Please select a product');
-      return;
+    const allItems: VendorInvoiceItem[] = [];
+    for (const entry of form.entries) {
+      if (!entry.productId) continue;
+      allItems.push(...entry.expandedItems);
     }
-    const qty = parseFloat(form.quantity) || 0;
-    const unitPrice = parseFloat(form.unitPrice) || 0;
-    if (qty < 1) {
-      Alert.alert('Error', 'Quantity must be at least 1');
-      return;
-    }
-    if (unitPrice < 0) {
-      Alert.alert('Error', 'Unit price cannot be negative');
+    if (allItems.length === 0) {
+      Alert.alert('Error', 'Please add at least one product with a valid quantity.');
       return;
     }
     setSaving(true);
@@ -319,18 +614,9 @@ export default function VendorInvoicesScreen() {
         invoiceNumber: editing?.invoiceNumber || '',
         invoiceDate: form.invoiceDate.trim(),
         batch: form.batch.trim(),
+        discount: formDiscount || 0,
         totalAmount,
-        items: [
-          {
-            productId: form.productId,
-            productName: form.productName || form.productId,
-            quantity: qty,
-            unitPrice,
-            unitType: form.unitType || 'piece',
-            subtotal: qty * unitPrice,
-            serialNumber: form.serialNumber,
-          },
-        ],
+        items: allItems,
       };
       if (editing) {
         await updateVendorInvoice(editing.id, payload);
@@ -377,80 +663,250 @@ export default function VendorInvoicesScreen() {
     );
   };
 
+  const handlePrint = async (invoice: VendorInvoice) => {
+    setPrintTarget(invoice);
+    setPrinting(true);
+    try {
+      const vendor = vendors.find(v => v.id === invoice.vendorId);
+      const company = companies.find(c => c.id === companyId) || companies[0] || null;
+      const html = buildInvoicePrintHtml(invoice, vendor, company);
+      await RNPrint.print({
+        html,
+        jobName: `Vendor Invoice ${invoice.invoiceNumber}`,
+      });
+    } catch (err: any) {
+      Alert.alert('Print Error', err?.message || 'Could not start the print job.');
+    } finally {
+      setPrinting(false);
+      setPrintTarget(null);
+    }
+  };
+
+  const currentCompany = useMemo(
+    () => companies.find(c => c.id === companyId) || companies[0] || null,
+    [companies, companyId],
+  );
+
+  const groupedProducts = useMemo(
+    () =>
+      products.map(p => ({
+        id: p.id,
+        name: p.name,
+        totalSNs: parseSNs(p.serialNumber).length,
+      })),
+    [products],
+  );
+
+  const filteredVendors = vendors.filter(v => {
+    const q = pickerQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (v.name || '').toLowerCase().includes(q);
+  });
+
+  const filteredProducts = groupedProducts.filter(p => {
+    const q = pickerQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (p.name || '').toLowerCase().includes(q);
+  });
+
+  const getVisiblePages = () => {
+    const pages: number[] = [];
+    const startPage = Math.max(1, currentPage - 3);
+    const endPage = Math.min(totalPages, currentPage + 3);
+    for (let i = startPage; i <= endPage; i++) {
+      pages.push(i);
+    }
+    return pages;
+  };
+
+  const handlePageSubmit = () => {
+    const page = parseInt(pageInput, 10);
+    if (page && page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+      setPageInput('');
+    }
+  };
+
   const selectedVendorFilter = vendors.find(v => v.id === vendorFilter);
 
   const renderItem = ({item, index}: {item: VendorInvoice; index: number}) => {
-    const serials = (item.items || [])
-      .map(i => i.serialNumber)
-      .filter(Boolean);
-    const names = (item.items || []).map(i => i.productName).filter(Boolean);
+    const itemsArr = item.items || [];
+    const productNames = itemsArr
+      .map(i => i.productName)
+      .filter(Boolean)
+      .join(', ');
+    const totalQty = itemsArr.reduce((s, i) => s + (Number(i.quantity) || 0), 0);
+    const allSNs = itemsArr.flatMap(i => parseSNs(i.serialNumber));
+    const distinctProductIds = new Set(itemsArr.map(i => i.productId).filter(Boolean));
+    const itemCount = distinctProductIds.size;
+    const singleProductId = distinctProductIds.size === 1 ? Array.from(distinctProductIds)[0] : '';
+    const product = products.find(p => p.id === singleProductId);
+    let remaining = allSNs.length;
+    if (product && singleProductId) {
+      const productSNs = parseSNs(product.serialNumber);
+      const consumed = Math.min(product.currentSerialIndex ?? 0, productSNs.length);
+      const consumedSet = new Set(productSNs.slice(0, consumed));
+      remaining = allSNs.filter(sn => !consumedSet.has(sn)).length;
+    }
+    const displaySn =
+      allSNs.length === 0
+        ? '—'
+        : allSNs.length === 1
+          ? allSNs[0]
+          : `${allSNs[0]} (${remaining}/${allSNs.length})`;
+    const purchasePrice =
+      itemCount > 1 ? '—' : `PKR ${Number((itemsArr[0]?.purchasePrice ?? itemsArr[0]?.unitPrice) || 0).toFixed(2)}`;
+    const expandable = allSNs.length > 1;
+    const isExpanded = expanded.has(item.id);
+    const toggleExpand = () => {
+      setExpanded(prev => {
+        const next = new Set(prev);
+        if (next.has(item.id)) {
+          next.delete(item.id);
+        } else {
+          next.add(item.id);
+        }
+        return next;
+      });
+    };
+    const entryRows: {productName: string; serialNumber: string; price: number}[] = [];
+    for (const itm of itemsArr) {
+      for (const sn of parseSNs(itm.serialNumber)) {
+        entryRows.push({
+          productName: itm.productName,
+          serialNumber: sn,
+          price: Number(itm.purchasePrice ?? itm.unitPrice) || 0,
+        });
+      }
+    }
     return (
       <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.rowIndex}>{index + 1 + (currentPage - 1) * pageSize}</Text>
-          <View style={styles.cardInfo}>
-            <Text style={styles.invoiceNumber} numberOfLines={1}>
-              {item.invoiceNumber}
-            </Text>
-            <Text style={styles.cardName} numberOfLines={1}>
-              {item.vendorName || '-'}
+        <TouchableOpacity activeOpacity={0.7} onPress={toggleExpand}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.rowIndex}>{index + 1 + (currentPage - 1) * pageSize}</Text>
+            <View style={styles.cardInfo}>
+              <Text style={styles.invoiceNumber} numberOfLines={1}>
+                {item.invoiceNumber || '—'}
+              </Text>
+              <Text style={styles.cardName} numberOfLines={1}>
+                {item.vendorName || '—'}
+              </Text>
+            </View>
+            <View style={[styles.expandChip, !expandable && styles.expandChipDisabled]}>
+              <Text style={styles.expandChipText}>{expandable ? (isExpanded ? '−' : '+') : ''}</Text>
+            </View>
+          </View>
+
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Vendor</Text>
+            <View style={styles.infoValueRow}>
+              <Building2 size={13} color="#6B7280" />
+              <Text style={styles.infoValue} numberOfLines={1}>
+                {item.vendorName || '-'}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Buying Date</Text>
+            <View style={styles.infoValueRow}>
+              <Calendar size={13} color="#6B7280" />
+              <Text style={styles.infoValue} numberOfLines={1}>
+                {item.invoiceDate || '-'}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Batch</Text>
+            <Text style={styles.infoValue} numberOfLines={1}>
+              {item.batch || '—'}
             </Text>
           </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Product</Text>
+            <Text style={styles.infoValue} numberOfLines={2}>
+              {productNames || '—'}
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>SN / MAC</Text>
+            <Text style={styles.infoValueMono} numberOfLines={1}>
+              {displaySn}
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Qty</Text>
+            <Text style={styles.infoValue} numberOfLines={1}>
+              {totalQty}
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Purchase Price</Text>
+            <Text style={styles.infoValue} numberOfLines={1}>
+              {purchasePrice}
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Total</Text>
+            <Text style={styles.infoValue} numberOfLines={1}>
+              PKR {fmtPKR(item.totalAmount)}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {isExpanded && expandable ? (
+          <View style={styles.entriesBox}>
+            <View style={styles.entriesHeaderRow}>
+              <View style={styles.entriesTitleRow}>
+                <Text style={styles.entriesHeader}>Serial entries ({entryRows.length})</Text>
+              </View>
+            </View>
+            <View style={styles.entriesTable}>
+              <View style={styles.entriesRowHead}>
+                <Text style={[styles.entryCell, styles.entryNum]}>#</Text>
+                <Text style={[styles.entryCell, styles.entryProduct]}>Product</Text>
+                <Text style={[styles.entryCell, styles.entrySn]}>SN / MAC</Text>
+                <Text style={[styles.entryCell, styles.entryPrice]}>Price</Text>
+              </View>
+              {entryRows.map((row, i) => (
+                <View key={`${item.id}-${i}-${row.serialNumber}`} style={styles.entriesRow}>
+                  <Text style={[styles.entryCell, styles.entryNum]}>{i + 1}</Text>
+                  <Text style={[styles.entryCell, styles.entryProduct]} numberOfLines={1}>
+                    {row.productName}
+                  </Text>
+                  <Text style={[styles.entryCell, styles.entrySn]} numberOfLines={1}>
+                    {row.serialNumber}
+                  </Text>
+                  <Text style={[styles.entryCell, styles.entryPrice]}>
+                    PKR {fmtPKR(row.price)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        <View style={styles.cardFooter}>
+          <View style={styles.totalBox}>
+            <Text style={styles.totalLabel}>Invoice Total</Text>
+            <Text style={styles.totalValue}>PKR {fmtPKR(item.totalAmount)}</Text>
+          </View>
           <View style={styles.cardActions}>
+            <TouchableOpacity
+              style={styles.printBtn}
+              onPress={() => handlePrint(item)}
+              disabled={printing}>
+              {printing && printTarget?.id === item.id ? (
+                <ActivityIndicator size="small" color="#2563EB" />
+              ) : (
+                <Printer size={15} color="#2563EB" />
+              )}
+            </TouchableOpacity>
             <TouchableOpacity style={styles.editBtn} onPress={() => openEdit(item)}>
               <Pencil size={15} color="#D97706" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(item)}>
               <Trash2 size={15} color="#DC2626" />
             </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Vendor</Text>
-          <View style={styles.infoValueRow}>
-            <Building2 size={13} color="#6B7280" />
-            <Text style={styles.infoValue} numberOfLines={1}>
-              {item.vendorName || '-'}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Buying Date</Text>
-          <View style={styles.infoValueRow}>
-            <Calendar size={13} color="#6B7280" />
-            <Text style={styles.infoValue} numberOfLines={1}>
-              {item.invoiceDate || '-'}
-            </Text>
-          </View>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Batch</Text>
-          <Text style={styles.infoValue} numberOfLines={1}>
-            {item.batch || '-'}
-          </Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>SN / MAC</Text>
-          <Text style={styles.infoValueMono} numberOfLines={1}>
-            {serials.length > 0 ? serials.join(', ') : '-'}
-          </Text>
-        </View>
-        <View style={styles.infoRow}>
-          <Text style={styles.infoLabel}>Products</Text>
-          <Text style={styles.infoValue} numberOfLines={2}>
-            {names.length > 0 ? names.join(', ') : '-'}
-          </Text>
-        </View>
-
-        <View style={styles.cardFooter}>
-          <View style={styles.itemCountBox}>
-            <Text style={styles.itemCountLabel}>Items</Text>
-            <Text style={styles.itemCountValue}>{(item.items || []).length}</Text>
-          </View>
-          <View style={styles.totalBox}>
-            <Text style={styles.totalLabel}>Total Amount</Text>
-            <Text style={styles.totalValue}>PKR {fmtPKR(item.totalAmount)}</Text>
           </View>
         </View>
       </View>
@@ -470,7 +926,7 @@ export default function VendorInvoicesScreen() {
     value: string,
     onChangeText: (t: string) => void,
     placeholder = '',
-    keyboardType?: 'default' | 'email-address' | 'phone-pad' | 'numeric',
+    keyboardType: 'default' | 'email-address' | 'phone-pad' | 'numeric' | 'decimal-pad' = 'default',
     editable = true,
   ) => (
     <View style={styles.formGroup}>
@@ -481,7 +937,7 @@ export default function VendorInvoicesScreen() {
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor="#9CA3AF"
-        keyboardType={keyboardType || 'default'}
+        keyboardType={keyboardType}
         editable={editable}
       />
     </View>
@@ -798,19 +1254,19 @@ export default function VendorInvoicesScreen() {
 
       {/* Vendor / Product picker sheet */}
       <Modal
-        visible={pickerOpen !== null}
+        visible={pickerTarget !== null}
         transparent
         animationType="slide"
-        onRequestClose={() => setPickerOpen(null)}>
+        onRequestClose={() => setPickerTarget(null)}>
         <KeyboardAvoidingView
           style={styles.sheetOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={[styles.sheet, styles.pickerSheet]}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>
-                {pickerOpen === 'vendor' ? 'Select Vendor' : 'Select Product'}
+                {pickerTarget?.kind === 'vendor' ? 'Select Vendor' : 'Select Product'}
               </Text>
-              <TouchableOpacity onPress={() => setPickerOpen(null)}>
+              <TouchableOpacity onPress={() => setPickerTarget(null)}>
                 <Text style={styles.sheetClose}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -819,7 +1275,7 @@ export default function VendorInvoicesScreen() {
               <TextInput
                 style={styles.pickerSearchInput}
                 placeholder={
-                  pickerOpen === 'vendor' ? 'Search vendors...' : 'Search products...'
+                  pickerTarget?.kind === 'vendor' ? 'Search vendors...' : 'Search products...'
                 }
                 placeholderTextColor="#9CA3AF"
                 value={pickerQuery}
@@ -828,7 +1284,7 @@ export default function VendorInvoicesScreen() {
               />
             </View>
             <ScrollView style={styles.sheetScroll} keyboardShouldPersistTaps="handled">
-              {pickerOpen === 'vendor' &&
+              {pickerTarget?.kind === 'vendor' &&
                 filteredVendors.map(vendor => {
                   const active = form.vendorId === vendor.id;
                   return (
@@ -837,7 +1293,7 @@ export default function VendorInvoicesScreen() {
                       style={styles.sheetOption}
                       onPress={() => {
                         setForm(prev => ({...prev, vendorId: vendor.id, vendorName: vendor.name}));
-                        setPickerOpen(null);
+                        setPickerTarget(null);
                         setPickerQuery('');
                       }}>
                       <View style={styles.sheetOptionRow}>
@@ -854,27 +1310,26 @@ export default function VendorInvoicesScreen() {
                     </TouchableOpacity>
                   );
                 })}
-              {pickerOpen === 'product' &&
+              {pickerTarget?.kind === 'product' &&
                 filteredProducts.map(product => {
-                  const active = form.productId === product.id;
+                  const targetIndex = pickerTarget?.kind === 'product' ? pickerTarget.index : -1;
+                  const active =
+                    targetIndex >= 0 && form.entries[targetIndex]?.productId === product.id;
                   return (
                     <TouchableOpacity
                       key={product.id}
                       style={styles.sheetOption}
                       onPress={() => {
-                        const unitPrice = product.purchasePrice || product.price || 0;
-                        setForm(prev => ({
-                          ...prev,
-                          productId: product.id,
-                          productName: product.name,
-                          unitType: product.unitType || '',
-                          unitPrice: String(unitPrice),
-                          serialNumber: product.serialNumber || '',
-                        }));
-                        setPickerOpen(null);
+                        if (pickerTarget?.kind === 'product') {
+                          updateEntry(pickerTarget.index, 'productId', product.id);
+                        }
+                        setPickerTarget(null);
                         setPickerQuery('');
                       }}>
                       <View style={styles.sheetOptionRow}>
+                        <View style={styles.pickIcon}>
+                          <Package size={16} color="#059669" />
+                        </View>
                         <Text
                           style={[
                             styles.sheetOptionText,
@@ -882,18 +1337,16 @@ export default function VendorInvoicesScreen() {
                           ]}>
                           {product.name}
                         </Text>
-                        {product.stock != null ? (
-                          <Text style={styles.pickerSecondary}>
-                            Stock: {product.stock}
-                          </Text>
+                        {product.totalSNs > 0 ? (
+                          <Text style={styles.pickerSecondary}>{product.totalSNs} SNs</Text>
                         ) : null}
                         {active ? <Check size={16} color="#F59E0B" /> : null}
                       </View>
                     </TouchableOpacity>
                   );
                 })}
-              {((pickerOpen === 'vendor' && filteredVendors.length === 0) ||
-                (pickerOpen === 'product' && filteredProducts.length === 0)) && (
+              {((pickerTarget?.kind === 'vendor' && filteredVendors.length === 0) ||
+                (pickerTarget?.kind === 'product' && filteredProducts.length === 0)) && (
                 <Text style={styles.pickerEmpty}>No results found</Text>
               )}
             </ScrollView>
@@ -931,7 +1384,7 @@ export default function VendorInvoicesScreen() {
                   style={styles.formSelect}
                   onPress={() => {
                     setPickerQuery('');
-                    setPickerOpen('vendor');
+                    setPickerTarget({kind: 'vendor'});
                   }}>
                   <Building2 size={16} color="#D97706" />
                   <Text
@@ -940,7 +1393,7 @@ export default function VendorInvoicesScreen() {
                       !form.vendorId && styles.formSelectPlaceholder,
                     ]}
                     numberOfLines={1}>
-                    {form.vendorId ? form.vendorName || form.vendorId : 'Select a vendor'}
+                    {form.vendorId ? form.vendorName || form.vendorId : 'Search vendor...'}
                   </Text>
                   <ChevronDown size={16} color="#6B7280" />
                 </TouchableOpacity>
@@ -952,7 +1405,7 @@ export default function VendorInvoicesScreen() {
                   <TextInput
                     style={styles.formInput}
                     value={form.invoiceDate}
-                    onChangeText={t => setField('invoiceDate', t)}
+                    onChangeText={t => setForm(prev => ({...prev, invoiceDate: t}))}
                     placeholder="YYYY-MM-DD"
                     placeholderTextColor="#9CA3AF"
                     autoCapitalize="none"
@@ -963,7 +1416,7 @@ export default function VendorInvoicesScreen() {
                   <TextInput
                     style={styles.formInput}
                     value={form.batch}
-                    onChangeText={t => setField('batch', t)}
+                    onChangeText={t => setForm(prev => ({...prev, batch: t}))}
                     placeholder="e.g., BATCH-001"
                     placeholderTextColor="#9CA3AF"
                   />
@@ -971,83 +1424,171 @@ export default function VendorInvoicesScreen() {
               </View>
 
               <View style={styles.productSection}>
-                <Text style={styles.sectionLabel}>Product Details</Text>
-
-                <View style={styles.formGroup}>
-                  <Text style={styles.formLabel}>Product *</Text>
-                  <TouchableOpacity
-                    style={styles.formSelect}
-                    onPress={() => {
-                      setPickerQuery('');
-                      setPickerOpen('product');
-                    }}>
-                    <FileText size={16} color="#D97706" />
-                    <Text
-                      style={[
-                        styles.formSelectText,
-                        !form.productId && styles.formSelectPlaceholder,
-                      ]}
-                      numberOfLines={1}>
-                      {form.productId ? form.productName || form.productId : 'Select product'}
-                    </Text>
-                    <ChevronDown size={16} color="#6B7280" />
+                <View style={styles.productSectionHeader}>
+                  <Text style={styles.sectionLabel}>Product Details</Text>
+                  <TouchableOpacity style={styles.addProductBtn} onPress={addEntry}>
+                    <Plus size={15} color="#059669" />
+                    <Text style={styles.addProductBtnText}>Add Product</Text>
                   </TouchableOpacity>
                 </View>
 
-                {formRow(
-                  'Unit Type',
-                  unitTypeLabel(form.unitType),
-                  () => {},
-                  '',
-                  'default',
-                  false,
-                )}
+                {form.entries.map((entry, index) => {
+                  const product = products.find(p => p.id === entry.productId);
+                  const totalSNs = product ? parseSNs(product.serialNumber || '').length : 0;
+                  const availableSNs = entry.productId ? getAvailableSNs(entry.productId, index) : [];
+                  const maxQty = availableSNs.length;
+                  const entrySNs = parseSNs(entry.expandedItems[0]?.serialNumber);
+                  const entrySnBadge =
+                    entrySNs.length === 0
+                      ? ''
+                      : entrySNs.length === 1
+                        ? `SN: ${entrySNs[0]}`
+                        : `${entrySNs[0]} (1/${entrySNs.length})`;
 
-                <View style={styles.formRow2}>
-                  <View style={styles.formGroup}>
-                    <Text style={styles.formLabel}>Quantity *</Text>
-                    <TextInput
-                      style={styles.formInput}
-                      keyboardType="numeric"
-                      value={form.quantity}
-                      onChangeText={t => {
-                        if (t === '' || /^\d*\.?\d*$/.test(t)) {
-                          setField('quantity', t);
-                        }
-                      }}
-                    />
-                  </View>
-                  <View style={styles.formGroup}>
-                    <Text style={styles.formLabel}>Unit Price *</Text>
-                    <TextInput
-                      style={styles.formInput}
-                      keyboardType="numeric"
-                      value={form.unitPrice}
-                      onChangeText={t => {
-                        if (t === '' || /^\d*\.?\d*$/.test(t)) {
-                          setField('unitPrice', t);
-                        }
-                      }}
-                      placeholder={form.productId ? 'Auto from product' : 'Select product first'}
-                      placeholderTextColor="#9CA3AF"
-                    />
-                  </View>
-                </View>
+                  return (
+                    <View key={index} style={styles.entryCard}>
+                      <View style={styles.entryCardHeader}>
+                        <Text style={styles.entryIndex}>#{index + 1}</Text>
+                        {entrySnBadge ? (
+                          <View style={styles.entrySnBadge}>
+                            <Text style={styles.entrySnBadgeText} numberOfLines={1}>
+                              {entrySnBadge}
+                            </Text>
+                          </View>
+                        ) : null}
+                        <View style={{flex: 1}} />
+                        <TouchableOpacity
+                          style={styles.entryRemoveBtn}
+                          onPress={() => removeEntry(index)}>
+                          <Trash2 size={16} color="#DC2626" />
+                        </TouchableOpacity>
+                      </View>
 
-                {formRow('Subtotal', `PKR ${fmtPKR(subtotal)}`, () => {}, '', 'default', false)}
-                {formRow(
-                  'SN / MAC',
-                  form.serialNumber,
-                  () => {},
-                  'Auto-filled from product',
-                  'default',
-                  false,
-                )}
+                      <View style={styles.formGroup}>
+                        <Text style={styles.formLabel}>Product *</Text>
+                        <View style={styles.entryProductRow}>
+                          <TouchableOpacity
+                            style={[styles.formSelect, styles.entryProductSelect]}
+                            onPress={() => {
+                              setPickerQuery('');
+                              setPickerTarget({kind: 'product', index});
+                            }}>
+                            <Package size={16} color="#059669" />
+                            <Text
+                              style={[
+                                styles.formSelectText,
+                                !entry.productId && styles.formSelectPlaceholder,
+                              ]}
+                              numberOfLines={1}>
+                              {entry.productId ? entry.productName : 'Search product...'}
+                            </Text>
+                            <ChevronDown size={16} color="#6B7280" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                      {formRow(
+                        'Unit Type',
+                        entry.unitType === 'piece' ? 'Per Piece' : entry.unitType === 'meter' ? 'Per Meter' : entry.unitType || '—',
+                        () => {},
+                        '',
+                        'default',
+                        false,
+                      )}
+
+                      <View style={styles.formRow3}>
+                        <View style={styles.formGroup}>
+                          <Text style={styles.formLabel}>
+                            Quantity *{maxQty > 0 ? ` (max ${maxQty})` : ''}
+                          </Text>
+                          <TextInput
+                            style={styles.formInput}
+                            keyboardType="numeric"
+                            value={entry.quantity}
+                            onChangeText={t => {
+                              if (t === '' || /^\d*$/.test(t)) {
+                                updateEntry(index, 'quantity', t === '' ? '1' : t);
+                              }
+                            }}
+                          />
+                          {entry.productId ? (
+                            <Text style={styles.fieldHint}>
+                              {totalSNs > 0
+                                ? `${entry.quantity} of ${totalSNs} SNs will be consumed`
+                                : 'No SNs on this product'}
+                            </Text>
+                          ) : null}
+                        </View>
+                        <View style={styles.formGroup}>
+                          <Text style={styles.formLabel}>Purchase Price *</Text>
+                          <TextInput
+                            style={styles.formInput}
+                            keyboardType="decimal-pad"
+                            value={entry.unitPrice}
+                            onChangeText={t => {
+                              if (t === '' || /^\d*\.?\d*$/.test(t)) {
+                                updateEntry(index, 'unitPrice', t);
+                              }
+                            }}
+                            placeholder={entry.productId ? 'Auto from product' : 'Select product first'}
+                            placeholderTextColor="#9CA3AF"
+                          />
+                        </View>
+                        <View style={styles.formGroup}>
+                          <Text style={styles.formLabel}>Selling Price *</Text>
+                          <TextInput
+                            style={styles.formInput}
+                            keyboardType="decimal-pad"
+                            value={entry.sellingPrice}
+                            onChangeText={t => {
+                              if (t === '' || /^\d*\.?\d*$/.test(t)) {
+                                updateEntry(index, 'sellingPrice', t);
+                              }
+                            }}
+                            placeholder={entry.productId ? 'Auto from product' : 'Select product first'}
+                            placeholderTextColor="#9CA3AF"
+                          />
+                        </View>
+                      </View>
+
+                      <View style={styles.entryFooterRow}>
+                        <Text style={styles.entrySubtotalLabel}>Subtotal</Text>
+                        <Text style={styles.entrySubtotalValue}>
+                          PKR {entrySubtotal(entry).toFixed(2)}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
 
-              <View style={styles.totalRow}>
-                <Text style={styles.totalAmountLabel}>Total Amount</Text>
-                <Text style={styles.totalAmountValue}>PKR {fmtPKR(totalAmount)}</Text>
+              <View style={styles.summaryBox}>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Subtotal</Text>
+                  <Text style={styles.summaryValue}>PKR {formSubtotal.toFixed(2)}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <View style={styles.discountLabelRow}>
+                    <Percent size={14} color="#059669" />
+                    <Text style={styles.summaryLabel}>Discount</Text>
+                  </View>
+                  <TextInput
+                    style={styles.discountInput}
+                    keyboardType="decimal-pad"
+                    value={form.discount}
+                    onChangeText={t => {
+                      if (t === '' || /^\d*\.?\d*$/.test(t)) {
+                        setForm(prev => ({...prev, discount: t}));
+                      }
+                    }}
+                    placeholder="0.00"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+                <View style={styles.summaryTotalRow}>
+                  <Text style={styles.summaryTotalLabel}>Total Amount:</Text>
+                  <Text style={styles.summaryTotalValue}>PKR {totalAmount.toFixed(2)}</Text>
+                </View>
               </View>
 
               <View style={styles.formActions}>
@@ -1233,7 +1774,66 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   cardName: {fontSize: 15, fontWeight: '600', color: '#111827'},
+  expandChip: {
+    width: 26, height: 26, borderRadius: 8, backgroundColor: '#ECFDF5',
+    justifyContent: 'center', alignItems: 'center', marginLeft: 8,
+  },
+  expandChipDisabled: {backgroundColor: '#F3F4F6'},
+  expandChipText: {fontSize: 18, fontWeight: '700', color: '#10B981'},
+  entriesBox: {
+    marginTop: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 10,
+    backgroundColor: '#F9FAFB',
+  },
+  entriesHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  entriesTitleRow: {flexDirection: 'row', alignItems: 'center', gap: 6},
+  entriesHeader: {fontSize: 11, fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 0.4},
+  entriesTable: {
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+  },
+  entriesRowHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  entriesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  entryCell: {fontSize: 12, color: '#374151'},
+  entryNum: {width: 22, color: '#9CA3AF', fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'})},
+  entryProduct: {flex: 1.2, fontWeight: '500', paddingRight: 8},
+  entrySn: {flex: 1.5, fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'}), paddingRight: 8},
+  entryPrice: {width: 80, textAlign: 'right', color: '#4B5563'},
   cardActions: {flexDirection: 'row', gap: 8},
+  printBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#EFF6FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   editBtn: {
     width: 32,
     height: 32,
@@ -1267,10 +1867,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     marginTop: 6,
   },
-  itemCountBox: {alignItems: 'flex-start'},
-  itemCountLabel: {fontSize: 11, color: '#9CA3AF'},
-  itemCountValue: {fontSize: 16, fontWeight: '700', color: '#111827'},
-  totalBox: {alignItems: 'flex-end'},
+  totalBox: {alignItems: 'flex-start'},
   totalLabel: {fontSize: 11, color: '#9CA3AF'},
   totalValue: {fontSize: 16, fontWeight: '700', color: '#B45309'},
   empty: {alignItems: 'center', paddingVertical: 40},
@@ -1386,6 +1983,14 @@ const styles = StyleSheet.create({
   sheetOptionRow: {flexDirection: 'row', alignItems: 'center', gap: 10},
   sheetOptionText: {flex: 1, fontSize: 15, color: '#374151', fontWeight: '500'},
   sheetOptionTextActive: {color: '#D97706', fontWeight: '600'},
+  pickIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#ECFDF5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   pickerSearch: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1438,6 +2043,7 @@ const styles = StyleSheet.create({
   formBody: {paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40},
   formGroup: {marginBottom: 14, flex: 1},
   formRow2: {flexDirection: 'row', gap: 12, alignItems: 'flex-start'},
+  formRow3: {flexDirection: 'row', gap: 10, alignItems: 'flex-start'},
   formLabel: {fontSize: 13, fontWeight: '500', color: '#374151', marginBottom: 6},
   formInput: {
     backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB',
@@ -1463,25 +2069,106 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     marginTop: 4,
   },
+  productSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
   sectionLabel: {
     fontSize: 12,
     fontWeight: '600',
     color: '#6B7280',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: 12,
   },
-  totalRow: {
+  addProductBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    backgroundColor: '#ECFDF5',
+  },
+  addProductBtnText: {fontSize: 12, fontWeight: '600', color: '#059669'},
+  entryCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 14,
+    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  entryCardHeader: {flexDirection: 'row', alignItems: 'center', marginBottom: 10},
+  entryIndex: {fontSize: 13, fontWeight: '600', color: '#374151'},
+  entrySnBadge: {
+    marginLeft: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: '#ECFDF5',
+    maxWidth: '60%',
+  },
+  entrySnBadgeText: {fontSize: 11, fontWeight: '600', color: '#047857', fontFamily: Platform.select({ios: 'Menlo', android: 'monospace'})},
+  entryRemoveBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  entryProductRow: {flexDirection: 'row', alignItems: 'center', gap: 8},
+  entryProductSelect: {flex: 1},
+  fieldHint: {fontSize: 10, color: '#9CA3AF', marginTop: 4},
+  entryFooterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    paddingTop: 16,
+    borderTopColor: '#F3F4F6',
+    paddingTop: 10,
     marginTop: 4,
   },
-  totalAmountLabel: {fontSize: 15, color: '#6B7280'},
-  totalAmountValue: {fontSize: 18, fontWeight: '700', color: '#B45309'},
+  entrySubtotalLabel: {fontSize: 13, color: '#6B7280'},
+  entrySubtotalValue: {fontSize: 15, fontWeight: '700', color: '#111827'},
+  summaryBox: {
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingTop: 14,
+    marginTop: 4,
+    paddingRight: 4,
+  },
+  summaryRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 4},
+  summaryLabel: {fontSize: 13, color: '#6B7280'},
+  summaryValue: {fontSize: 13, color: '#111827', fontWeight: '600'},
+  discountLabelRow: {flexDirection: 'row', alignItems: 'center', gap: 6},
+  discountInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    textAlign: 'right',
+    fontSize: 13,
+    color: '#111827',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    minWidth: 110,
+  },
+  summaryTotalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    marginTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  summaryTotalLabel: {fontSize: 15, color: '#111827', fontWeight: '600'},
+  summaryTotalValue: {fontSize: 18, fontWeight: '700', color: '#B45309'},
   formActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',

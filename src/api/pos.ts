@@ -11,6 +11,8 @@ export interface PosProduct {
   taxPercent: number;
   purchasePrice?: number;
   serialNumber?: string;
+  productSerialNumber?: string;
+  currentSerialIndex?: number;
   billId?: string;
   purchaseNumber?: string;
   vendorName?: string;
@@ -79,6 +81,7 @@ export async function createInstallmentSale(data: {
   installmentPlanId: string;
   subtotal: number;
   taxAmount: number;
+  discount?: number;
   paymentMethod: string;
   date: string;
   items: PosSaleItem[];

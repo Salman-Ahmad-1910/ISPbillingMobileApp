@@ -30,13 +30,24 @@ import {
   ChevronRight,
   ArrowRight,
   Check,
+  Pencil,
 } from 'lucide-react-native';
-import {getConnections, deleteConnection} from '../../api/connections';
-import {areasApi} from '../../api/network';
-import {Connection} from '../../types';
+import {
+  getConnections,
+  deleteConnection,
+  updateConnection,
+  bulkAssignSublocality,
+} from '../../api/connections';
+import {areasApi, boxesApi} from '../../api/network';
+import {getPackages} from '../../api/subscribers';
+import {getCompanies} from '../../api/companies';
+import {Area, Company, Connection, DistributionBox, Package} from '../../types';
 import {GradientButton} from '../../components/GradientButton';
 import {GradientView} from '../../components/GradientView';
+import OptionPickerSheet from '../../components/OptionPickerSheet';
+import {smartMatch} from '../../utils/search';
 import ImportExportModal from './ImportExportModal';
+import StatusDialogModal from './StatusDialogModal';
 
 const PAGE_SIZES = [10, 50, 100];
 
@@ -93,6 +104,10 @@ export default function SubscriberListScreen({navigation}: any) {
   const drawerStatus = useDrawerStatus();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [filtered, setFiltered] = useState<Connection[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
+  const [boxes, setBoxes] = useState<DistributionBox[]>([]);
+  const [packages, setPackages] = useState<Package[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [areaNames, setAreaNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -100,8 +115,11 @@ export default function SubscriberListScreen({navigation}: any) {
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterArea, setFilterArea] = useState('all');
   const [filterType, setFilterType] = useState('all');
+  const [filterBox, setFilterBox] = useState('all');
   const [filterPackage, setFilterPackage] = useState('all');
+  const [filterDiscount, setFilterDiscount] = useState('all');
   const [filterSort, setFilterSort] = useState('all');
+  const [filterProvider, setFilterProvider] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [pageInput, setPageInput] = useState('');
@@ -113,6 +131,13 @@ export default function SubscriberListScreen({navigation}: any) {
     options: FilterOption[];
     selected: string;
   } | null>(null);
+  const [bulkEditMode, setBulkEditMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkSublocality, setBulkSublocality] = useState('');
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkPickerOpen, setBulkPickerOpen] = useState(false);
+  const [statusTarget, setStatusTarget] = useState<Connection | null>(null);
+  const [statusSaving, setStatusSaving] = useState(false);
 
   const openDrawer = () => {
     nav.dispatch(DrawerActions.openDrawer());
@@ -125,10 +150,21 @@ export default function SubscriberListScreen({navigation}: any) {
       } else {
         setLoading(true);
       }
-      const [data, areas] = await Promise.all([getConnections(), areasApi.list()]);
+      const [data, areasData, boxesData, packagesData, companiesData] =
+        await Promise.all([
+          getConnections(),
+          areasApi.list(),
+          boxesApi.list(),
+          getPackages(),
+          getCompanies(),
+        ]);
       setConnections(data);
+      setAreas(areasData);
+      setBoxes(boxesData);
+      setPackages(packagesData);
+      setCompanies(companiesData);
       const map: Record<string, string> = {};
-      areas.forEach(a => {
+      areasData.forEach(a => {
         const label = a.subLocality || a.locality || a.id.slice(0, 8);
         map[a.id] = label;
       });
@@ -146,57 +182,75 @@ export default function SubscriberListScreen({navigation}: any) {
   useEffect(() => {
     let result = connections;
 
+    if (search) {
+      result = result.filter(c =>
+        smartMatch(search, [c.internetId, c.cell, c.mobile], [c.name, c.address]),
+      );
+    }
+
+    if (filterArea === 'unassigned') {
+      result = result.filter(c => !c.sublocalityId);
+    } else if (filterArea !== 'all') {
+      result = result.filter(c => c.sublocalityId === filterArea);
+    }
     if (filterStatus !== 'all') {
       result = result.filter(c => c.status === filterStatus);
     }
-    if (filterArea !== 'all') {
-      result = result.filter(c => c.sublocalityId === filterArea);
-    }
     if (filterType !== 'all') {
-      result = result.filter(c => c.connectionType === filterType);
+      const typeMap: Record<string, string> = {
+        both: 'both',
+        tv_cable: 'tv_cable',
+        internet: 'internet',
+        cable_all: 'tv_cable',
+        internet_all: 'internet',
+      };
+      result = result.filter(
+        c => c.connectionType === (typeMap[filterType] || filterType),
+      );
+    }
+    if (filterBox !== 'all') {
+      result = result.filter(c => c.boxNumber === filterBox);
     }
     if (filterPackage !== 'all') {
       result = result.filter(
         c => c.packageInternet === filterPackage || c.packageCable === filterPackage,
       );
     }
-    if (search.trim()) {
-      const q = search.toLowerCase();
+    if (filterDiscount !== 'all') {
       result = result.filter(
         c =>
-          c.internetId.toLowerCase().includes(q) ||
-          c.name.toLowerCase().includes(q) ||
-          (c.address || '').toLowerCase().includes(q) ||
-          (c.cell || '').includes(q) ||
-          (c.mobile || '').includes(q),
+          c.discount === filterDiscount ||
+          (filterDiscount === 'no_discount' && !c.discount),
       );
     }
+    if (filterProvider !== 'all') {
+      result = result.filter(c => c.connectionProvider === filterProvider);
+    }
+
     if (filterSort === 'name') {
       result = [...result].sort((a, b) => a.name.localeCompare(b.name));
-    } else if (filterSort === 'identity') {
+    } else if (filterSort === 'internetId') {
       result = [...result].sort((a, b) => a.internetId.localeCompare(b.internetId));
-    } else if (filterSort === 'date') {
+    } else if (filterSort === 'installationDate') {
       result = [...result].sort((a, b) =>
         (a.installationDate || '').localeCompare(b.installationDate || ''),
       );
     }
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      result = [...result].sort((a, b) => {
-        const aScore = (a.internetId.toLowerCase().startsWith(q) ? 0 : 1) +
-          (a.name.toLowerCase().startsWith(q) ? 0 : 1);
-        const bScore = (b.internetId.toLowerCase().startsWith(q) ? 0 : 1) +
-          (b.name.toLowerCase().startsWith(q) ? 0 : 1);
-        if (aScore !== bScore) {
-          return aScore - bScore;
-        }
-        return a.name.localeCompare(b.name);
-      });
-    }
 
     setFiltered(result);
     setCurrentPage(1);
-  }, [connections, search, filterStatus, filterArea, filterType, filterPackage, filterSort]);
+  }, [
+    connections,
+    search,
+    filterStatus,
+    filterArea,
+    filterType,
+    filterBox,
+    filterPackage,
+    filterDiscount,
+    filterSort,
+    filterProvider,
+  ]);
 
   const stats = useMemo(
     () => ({
@@ -217,50 +271,80 @@ export default function SubscriberListScreen({navigation}: any) {
     {key: 'suspended', label: 'Suspended', value: stats.suspended, icon: Pause, color: '#D97706', gradient: ['#FBBF24', '#D97706']},
   ];
 
-  const areaOptions = useMemo<FilterOption[]>(() => {
-    const unique = Array.from(
-      new Set(connections.map(c => c.sublocalityId).filter((v): v is string => !!v)),
-    );
-    return [
+  const areaOptions = useMemo<FilterOption[]>(
+    () => [
       {label: 'All Sublocality', value: 'all'},
-      ...unique.map(id => ({
-        label: areaNames[id] || id.slice(0, 8),
-        value: id,
+      {label: 'Unassigned', value: 'unassigned'},
+      ...areas.map(a => ({
+        label: a.subLocality || a.locality || a.id.slice(0, 8),
+        value: a.id,
       })),
-    ];
-  }, [connections, areaNames]);
+    ],
+    [areas],
+  );
 
-  const packageOptions = useMemo<FilterOption[]>(() => {
-    const unique = Array.from(
-      new Set(
-        connections
-          .flatMap(c => [c.packageInternet, c.packageCable])
-          .filter((v): v is string => !!v),
-      ),
-    );
-    return [{label: 'All Packages', value: 'all'}, ...unique.map(p => ({label: p, value: p}))];
-  }, [connections]);
+  const boxOptions = useMemo<FilterOption[]>(
+    () => [
+      {label: 'All Boxes', value: 'all'},
+      ...boxes.map(b => ({label: b.name, value: b.name})),
+    ],
+    [boxes],
+  );
+
+  const packageOptions = useMemo<FilterOption[]>(
+    () => [
+      {label: 'All Packages', value: 'all'},
+      ...packages.map(p => ({label: p.name, value: p.name})),
+    ],
+    [packages],
+  );
+
+  const providerOptions = useMemo<FilterOption[]>(
+    () => [
+      {label: 'All Providers', value: 'all'},
+      ...companies.map(c => ({label: c.name, value: c.name})),
+    ],
+    [companies],
+  );
+
+  const bulkAreaOptions = useMemo<FilterOption[]>(
+    () =>
+      areas.map(a => ({
+        label: a.subLocality || a.locality || a.id.slice(0, 8),
+        value: a.id,
+      })),
+    [areas],
+  );
 
   const statusOptions: FilterOption[] = [
     {label: 'All', value: 'all'},
     {label: 'Active', value: 'active'},
     {label: 'Inactive', value: 'inactive'},
-    {label: 'Deactivated', value: 'deactivated'},
-    {label: 'Suspended', value: 'suspended'},
   ];
 
   const typeOptions: FilterOption[] = [
     {label: 'All', value: 'all'},
     {label: 'Both', value: 'both'},
-    {label: 'Internet', value: 'internet'},
     {label: 'TV Cable', value: 'tv_cable'},
+    {label: 'Cable All', value: 'cable_all'},
+    {label: 'Internet', value: 'internet'},
+    {label: 'Internet All', value: 'internet_all'},
+  ];
+
+  const discountOptions: FilterOption[] = [
+    {label: 'All Discounts', value: 'all'},
+    {label: 'No Discount', value: 'no_discount'},
+    {label: 'Quarter', value: 'quarter'},
+    {label: 'Half', value: 'half'},
+    {label: 'Full Free', value: 'full_free'},
+    {label: 'Custom', value: 'custom'},
   ];
 
   const sortOptions: FilterOption[] = [
     {label: 'Default', value: 'all'},
     {label: 'Name', value: 'name'},
-    {label: 'Internet ID', value: 'identity'},
-    {label: 'Install Date', value: 'date'},
+    {label: 'Internet ID', value: 'internetId'},
+    {label: 'Install Date', value: 'installationDate'},
   ];
 
   const openFilterSheet = (key: string, title: string, options: FilterOption[], selected: string) => {
@@ -275,12 +359,107 @@ export default function SubscriberListScreen({navigation}: any) {
       setFilterArea(value);
     } else if (key === 'type') {
       setFilterType(value);
+    } else if (key === 'box') {
+      setFilterBox(value);
     } else if (key === 'package') {
       setFilterPackage(value);
+    } else if (key === 'discount') {
+      setFilterDiscount(value);
+    } else if (key === 'provider') {
+      setFilterProvider(value);
     } else if (key === 'sort') {
       setFilterSort(value);
     }
     setFilterSheet(null);
+  };
+
+  const allFilteredSelected =
+    filtered.length > 0 && filtered.every(c => selectedIds.has(c.id));
+
+  const toggleOne = (id: string, checked: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (checked: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      filtered.forEach(c => (checked ? next.add(c.id) : next.delete(c.id)));
+      return next;
+    });
+  };
+
+  const exitBulkEditMode = () => {
+    setBulkEditMode(false);
+    setSelectedIds(new Set());
+    setBulkSublocality('');
+  };
+
+  const handleAddSublocality = async () => {
+    if (!bulkSublocality || selectedIds.size === 0) {
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      const updated = await bulkAssignSublocality(
+        Array.from(selectedIds),
+        bulkSublocality,
+        `Bulk sublocality assignment (${selectedIds.size} subscriber(s))`,
+      );
+      exitBulkEditMode();
+      await fetchData(false);
+      Alert.alert(
+        'Success',
+        `Sublocality assigned to ${updated} subscriber(s).`,
+      );
+    } catch (err: any) {
+      Alert.alert(
+        'Error',
+        err?.response?.data?.message || 'Failed to update sublocality',
+      );
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
+  const handleChangeStatus = async (
+    connection: Connection,
+    status: string,
+    reason: string,
+    comments: string,
+  ) => {
+    setStatusSaving(true);
+    try {
+      // The backend applies only the fields present in the payload, so the
+      // deactivation bookkeeping is sent when moving to "deactivated" and
+      // omitted for the other statuses.
+      const payload: Partial<Connection> & Record<string, string | number> = {
+        status,
+      };
+      if (status === 'deactivated') {
+        payload.deactivationReason = reason;
+        payload.comments = comments;
+        payload.leavingDate = new Date().toISOString();
+      }
+      await updateConnection(connection.id, payload as Partial<Connection>);
+      setStatusTarget(null);
+      await fetchData(false);
+      Alert.alert('Success', `Subscriber status updated to ${status}.`);
+    } catch (err: any) {
+      Alert.alert(
+        'Error',
+        err?.response?.data?.message || 'Failed to update subscriber status',
+      );
+    } finally {
+      setStatusSaving(false);
+    }
   };
 
   const handleDelete = (id: string, name: string) => {
@@ -343,8 +522,19 @@ export default function SubscriberListScreen({navigation}: any) {
     return (
     <TouchableOpacity
       style={styles.card}
+      disabled={bulkEditMode}
       onPress={() => navigation.navigate('SubscriberDetail', {connection: item})}>
       <View style={styles.cardHeader}>
+        {bulkEditMode ? (
+          <TouchableOpacity
+            style={[
+              styles.checkbox,
+              selectedIds.has(item.id) && styles.checkboxChecked,
+            ]}
+            onPress={() => toggleOne(item.id, !selectedIds.has(item.id))}>
+            {selectedIds.has(item.id) ? <Check size={14} color="#FFFFFF" /> : null}
+          </TouchableOpacity>
+        ) : null}
         <Text style={styles.rowIndex}>{displayId}</Text>
         <View style={styles.cardInfo}>
           <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
@@ -393,6 +583,7 @@ export default function SubscriberListScreen({navigation}: any) {
         </Text>
       </View>
       <View style={styles.cardFooter}>
+        {bulkEditMode ? null : (
         <View style={styles.cardActions}>
           <TouchableOpacity
             style={styles.editBtn}
@@ -400,11 +591,17 @@ export default function SubscriberListScreen({navigation}: any) {
             <Text style={styles.editBtnText}>Edit</Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={styles.statusBtn}
+            onPress={() => setStatusTarget(item)}>
+            <Text style={styles.statusBtnText}>Status</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={styles.deleteBtn}
             onPress={() => handleDelete(item.id, item.name)}>
             <Text style={styles.deleteBtnText}>Delete</Text>
           </TouchableOpacity>
         </View>
+        )}
       </View>
     </TouchableOpacity>
     );
@@ -485,24 +682,33 @@ export default function SubscriberListScreen({navigation}: any) {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.filterRow}>
-              {filterTrigger('Sublocality', filterArea === 'all' ? 'All' : areaNames[filterArea] || filterArea.slice(0, 8), () =>
+              {filterTrigger('Sublocality', filterArea === 'all' ? 'All' : filterArea === 'unassigned' ? 'Unassigned' : areaNames[filterArea] || filterArea.slice(0, 8), () =>
                 openFilterSheet('area', 'Sublocality', areaOptions, filterArea),
               )}
               {filterTrigger('Status', filterStatus === 'all' ? 'All' : filterStatus, () =>
                 openFilterSheet('status', 'Status', statusOptions, filterStatus),
               )}
-              {filterTrigger('Type', filterType === 'all' ? 'All' : TYPE_LABELS[filterType] || filterType, () =>
+              {filterTrigger('Type', filterType === 'all' ? 'All' : typeOptions.find(o => o.value === filterType)?.label || filterType, () =>
                 openFilterSheet('type', 'Type', typeOptions, filterType),
+              )}
+              {filterTrigger('Box Number', filterBox === 'all' ? 'All' : filterBox, () =>
+                openFilterSheet('box', 'Box Number', boxOptions, filterBox),
               )}
               {filterTrigger('Package', filterPackage === 'all' ? 'All' : filterPackage, () =>
                 openFilterSheet('package', 'Package', packageOptions, filterPackage),
               )}
-              {filterTrigger('Sort By', filterSort === 'all' ? 'Default' : filterSort, () =>
+              {filterTrigger('Discount', filterDiscount === 'all' ? 'All' : discountOptions.find(o => o.value === filterDiscount)?.label || filterDiscount, () =>
+                openFilterSheet('discount', 'Discount', discountOptions, filterDiscount),
+              )}
+              {filterTrigger('Sort By', filterSort === 'all' ? 'Default' : sortOptions.find(o => o.value === filterSort)?.label || filterSort, () =>
                 openFilterSheet('sort', 'Sort By', sortOptions, filterSort),
+              )}
+              {filterTrigger('Connection Provider', filterProvider === 'all' ? 'All' : filterProvider, () =>
+                openFilterSheet('provider', 'Connection Provider', providerOptions, filterProvider),
               )}
             </ScrollView>
 
-            {/* Search + Add */}
+            {/* Search + Bulk Edit + Import/Export + Add */}
             <View style={styles.toolbar}>
               <View style={styles.searchBox}>
                 <Search size={16} color="#6B7280" />
@@ -514,6 +720,17 @@ export default function SubscriberListScreen({navigation}: any) {
                   onChangeText={setSearch}
                 />
               </View>
+              <TouchableOpacity
+                style={[styles.bulkBtn, bulkEditMode && styles.bulkBtnActive]}
+                onPress={() =>
+                  bulkEditMode ? exitBulkEditMode() : setBulkEditMode(true)
+                }
+                accessibilityLabel="Bulk edit subscribers">
+                <Pencil size={16} color={bulkEditMode ? '#FFFFFF' : '#1D4ED8'} />
+                <Text style={[styles.bulkBtnText, bulkEditMode && styles.bulkBtnTextActive]}>
+                  {bulkEditMode ? 'Done' : 'Bulk Edit'}
+                </Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={styles.importBtn}
                 onPress={() => setImportExportOpen(true)}
@@ -530,14 +747,80 @@ export default function SubscriberListScreen({navigation}: any) {
                 </Text>
               </GradientButton>
             </View>
+
+            {bulkEditMode ? (
+              <View style={styles.bulkBar}>
+                <Text style={styles.bulkCount}>
+                  {selectedIds.size} subscriber(s) selected
+                </Text>
+                <TouchableOpacity
+                  style={styles.bulkSelect}
+                  onPress={() => setBulkPickerOpen(true)}>
+                  <Text
+                    style={[
+                      styles.bulkSelectText,
+                      !bulkSublocality && styles.bulkPlaceholder,
+                    ]}
+                    numberOfLines={1}>
+                    {bulkSublocality
+                      ? areaNames[bulkSublocality] || bulkSublocality.slice(0, 8)
+                      : 'Select sublocality'}
+                  </Text>
+                  <ChevronDown size={14} color="#6B7280" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.bulkApplyBtn,
+                    (!bulkSublocality || selectedIds.size === 0 || bulkSaving) &&
+                      styles.bulkBtnDisabled,
+                  ]}
+                  disabled={!bulkSublocality || selectedIds.size === 0 || bulkSaving}
+                  onPress={handleAddSublocality}>
+                  {bulkSaving ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.bulkApplyText}>Add Sublocality</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.bulkCancelBtn}
+                  onPress={exitBulkEditMode}>
+                  <Text style={styles.bulkCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
+            {bulkEditMode ? (
+              <TouchableOpacity
+                style={styles.selectAllRow}
+                onPress={() => toggleSelectAll(!allFilteredSelected)}>
+                <View
+                  style={[
+                    styles.checkbox,
+                    allFilteredSelected && styles.checkboxChecked,
+                  ]}>
+                  {allFilteredSelected ? (
+                    <Check size={14} color="#FFFFFF" />
+                  ) : null}
+                </View>
+                <Text style={styles.selectAllText}>Select all subscribers</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         }
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyIcon}>👥</Text>
-            <Text style={styles.emptyTitle}>No subscribers found</Text>
+            <Text style={styles.emptyTitle}>No results.</Text>
             <Text style={styles.emptyText}>
-              {search || filterStatus !== 'all' || filterArea !== 'all' || filterType !== 'all' || filterPackage !== 'all'
+              {search ||
+              filterStatus !== 'all' ||
+              filterArea !== 'all' ||
+              filterType !== 'all' ||
+              filterBox !== 'all' ||
+              filterPackage !== 'all' ||
+              filterDiscount !== 'all' ||
+              filterProvider !== 'all'
                 ? 'Try adjusting your filters'
                 : 'Add your first subscriber'}
             </Text>
@@ -728,9 +1011,29 @@ export default function SubscriberListScreen({navigation}: any) {
           setFilterStatus('all');
           setFilterArea('all');
           setFilterType('all');
+          setFilterBox('all');
           setFilterPackage('all');
+          setFilterDiscount('all');
           setFilterSort('all');
+          setFilterProvider('all');
         }}
+      />
+
+      <OptionPickerSheet
+        visible={bulkPickerOpen}
+        title="Select sublocality"
+        options={bulkAreaOptions}
+        value={bulkSublocality}
+        onSelect={setBulkSublocality}
+        onClose={() => setBulkPickerOpen(false)}
+      />
+
+      <StatusDialogModal
+        visible={!!statusTarget}
+        connection={statusTarget}
+        saving={statusSaving}
+        onClose={() => setStatusTarget(null)}
+        onSubmit={handleChangeStatus}
       />
     </View>
   );
@@ -900,6 +1203,12 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#E5E7EB',
   },
   cardHeader: {flexDirection: 'row', alignItems: 'center', marginBottom: 8},
+  checkbox: {
+    width: 20, height: 20, borderRadius: 5, borderWidth: 1,
+    borderColor: '#9CA3AF', alignItems: 'center', justifyContent: 'center',
+    marginRight: 8, backgroundColor: '#FFFFFF',
+  },
+  checkboxChecked: {backgroundColor: '#2563EB', borderColor: '#2563EB'},
   rowIndex: {
     fontSize: 12,
     fontWeight: '700',
@@ -927,6 +1236,52 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF2F2',
   },
   deleteBtnText: {fontSize: 12, fontWeight: '500', color: '#EF4444'},
+  statusBtn: {
+    paddingHorizontal: 12, paddingVertical: 5, borderRadius: 6,
+    backgroundColor: '#FFFBEB',
+  },
+  statusBtnText: {fontSize: 12, fontWeight: '500', color: '#D97706'},
+  bulkBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderRadius: 10, borderWidth: 1, borderColor: '#BFDBFE',
+    backgroundColor: '#FFFFFF', paddingHorizontal: 12, paddingVertical: 10,
+    flexShrink: 0,
+  },
+  bulkBtnActive: {backgroundColor: '#2563EB', borderColor: '#2563EB'},
+  bulkBtnText: {fontSize: 13, fontWeight: '600', color: '#1D4ED8'},
+  bulkBtnTextActive: {color: '#FFFFFF'},
+  bulkBar: {
+    flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8,
+    marginHorizontal: 16, marginTop: 12, padding: 12,
+    borderRadius: 10, borderWidth: 1, borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+  },
+  bulkCount: {fontSize: 13, fontWeight: '600', color: '#1E40AF'},
+  bulkSelect: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    flexGrow: 1, flexBasis: 160, minWidth: 0,
+    borderWidth: 1, borderColor: '#BFDBFE', borderRadius: 8,
+    backgroundColor: '#FFFFFF', paddingHorizontal: 12, paddingVertical: 9,
+  },
+  bulkSelectText: {fontSize: 13, color: '#111827', fontWeight: '500', marginRight: 6, flexShrink: 1},
+  bulkPlaceholder: {color: '#9CA3AF'},
+  bulkApplyBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    borderRadius: 8, backgroundColor: '#166534', paddingHorizontal: 14,
+    paddingVertical: 10, minWidth: 120,
+  },
+  bulkApplyText: {color: '#FFFFFF', fontSize: 13, fontWeight: '600'},
+  bulkBtnDisabled: {opacity: 0.6},
+  bulkCancelBtn: {
+    borderRadius: 8, borderWidth: 1, borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF', paddingHorizontal: 14, paddingVertical: 10,
+  },
+  bulkCancelText: {fontSize: 13, fontWeight: '600', color: '#374151'},
+  selectAllRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 20, paddingTop: 12,
+  },
+  selectAllText: {fontSize: 13, color: '#374151', fontWeight: '500'},
   empty: {alignItems: 'center', paddingVertical: 40},
   emptyIcon: {fontSize: 48, marginBottom: 12},
   emptyTitle: {fontSize: 16, fontWeight: '600', color: '#374151', marginBottom: 4},

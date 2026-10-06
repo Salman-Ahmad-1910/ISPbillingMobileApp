@@ -1,8 +1,5 @@
 #!/bin/sh
 
-# Add nvm node to PATH for Gradle daemon
-export PATH="/home/salman-ahmad/.nvm/versions/node/v24.18.0/bin:$PATH"
-
 #
 # Copyright © 2015 the original authors.
 #

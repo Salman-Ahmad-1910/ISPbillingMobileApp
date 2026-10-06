@@ -1,8 +1,16 @@
 import apiClient from './client';
 import {ApiResponse, DashboardData, ChartPoint} from '../types';
 
-export async function getDashboardData(): Promise<DashboardData> {
-  const response = await apiClient.get<ApiResponse<DashboardData>>('/dashboard');
+export type TimeRange = 'daily' | 'monthly' | 'yearly' | 'all';
+export type PackageType = 'both' | 'internet' | 'tv_cable';
+
+export async function getDashboardData(
+  timeRange: TimeRange = 'monthly',
+  packageType: PackageType = 'both',
+): Promise<DashboardData> {
+  const response = await apiClient.get<ApiResponse<DashboardData>>('/dashboard', {
+    params: {range: timeRange, packageType},
+  });
   return response.data.data!;
 }
 

@@ -88,6 +88,7 @@ import SubscribersDefaultersScreen from '../screens/subscriber-reports/Subscribe
 import NewSubscribersScreen from '../screens/subscriber-reports/NewSubscribersScreen';
 import SubscribersCreatorSummaryScreen from '../screens/subscriber-reports/SubscribersCreatorSummaryScreen';
 import SupportScreen from '../screens/support/SupportScreen';
+import SharedFileManagerScreen from '../screens/SharedFileManagerScreen';
 import CompanySwitcher from '../components/CompanySwitcher';
 import {
   AreasNavigator,
@@ -163,7 +164,11 @@ type NavItem = {
 const navItems: {title: string; items: NavItem[]}[] = [
   {
     title: 'Dashboard',
-    items: [{label: 'Dashboard', icon: LayoutDashboard, screen: 'Dashboard'}],
+    items: [
+      {label: 'Dashboard', icon: LayoutDashboard, screen: 'Dashboard'},
+      {label: 'Drivers', icon: Box, screen: 'Drivers'},
+      {label: 'Applications', icon: Box, screen: 'Applications'},
+    ],
   },
   {
     title: 'Network',
@@ -453,6 +458,32 @@ export default function DrawerNavigator() {
         },
       }}>
       <Drawer.Screen name="Dashboard" component={DashboardScreen} />
+      <Drawer.Screen
+        name="Drivers"
+        component={(props: any) => (
+          <SharedFileManagerScreen
+            {...props}
+            title="Drivers"
+            description="Upload driver/installer (.exe) files and let other users download them from this page."
+            kind="driver"
+            uploadEndpoint="/upload/driver"
+            listEndpoint="/drivers"
+          />
+        )}
+      />
+      <Drawer.Screen
+        name="Applications"
+        component={(props: any) => (
+          <SharedFileManagerScreen
+            {...props}
+            title="Application"
+            description="Upload your application file and let other users download it from this page."
+            kind="application"
+            uploadEndpoint="/upload/application"
+            listEndpoint="/applications"
+          />
+        )}
+      />
       <Drawer.Screen name="Subscribers" component={SubscribersNavigator} />
       <Drawer.Screen name="Areas" component={AreasNavigator} />
       <Drawer.Screen name="POPs" component={PopsNavigator} />

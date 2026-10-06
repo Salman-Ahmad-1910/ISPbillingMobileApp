@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TextInput,
   TouchableOpacity,
   RefreshControl,
@@ -33,9 +32,18 @@ import {
   Trash2,
   CircleDot,
   Search,
+  Save,
+  RotateCcw,
   TriangleAlert,
 } from 'lucide-react-native';
-import {getRecoveryOfficers, getAreas, updateArea, deleteArea} from '../../api/recovery';
+import {
+  getRecoveryOfficers,
+  getAreas,
+  updateArea,
+  deleteArea,
+  assignAreaOfficer,
+  unassignAreaOfficer,
+} from '../../api/recovery';
 import {Area, RecoveryOfficer} from '../../types';
 import {GradientButton} from '../../components/GradientButton';
 import {GradientView} from '../../components/GradientView';
@@ -215,6 +223,11 @@ export default function RecoveryAreasScreen() {
   const [selectedOfficerId, setSelectedOfficerId] = useState('');
   const [leftSelected, setLeftSelected] = useState<string[]>([]);
   const [rightSelected, setRightSelected] = useState<string[]>([]);
+  // Staged (not yet saved) changes for the selected officer:
+  // stagedRightIds = areas moved left -> right (to be assigned),
+  // stagedLeftIds   = areas moved right -> left (to be unassigned).
+  const [stagedRightIds, setStagedRightIds] = useState<string[]>([]);
+  const [stagedLeftIds, setStagedLeftIds] = useState<string[]>([]);
   const [transferSaving, setTransferSaving] = useState(false);
 
   const [formOpen, setFormOpen] = useState(false);
@@ -247,7 +260,9 @@ export default function RecoveryAreasScreen() {
           continue;
         }
         const existing = byId[a.id];
-        if (!existing || (!existing.recoveryOfficerId && a.recoveryOfficerId)) {
+        const incomingCount = a.recoveryOfficerIds?.length ?? 0;
+        const existingCount = existing?.recoveryOfficerIds?.length ?? 0;
+        if (!existing || incomingCount > existingCount) {
           byId[a.id] = a;
         }
       }
@@ -258,6 +273,8 @@ export default function RecoveryAreasScreen() {
       );
       setLeftSelected([]);
       setRightSelected([]);
+      setStagedRightIds([]);
+      setStagedLeftIds([]);
     } catch (err: any) {
       const reason =
         err.response?.data?.error ||
@@ -278,15 +295,51 @@ export default function RecoveryAreasScreen() {
 
   const selectedOfficer = officers.find(o => o.id === selectedOfficerId) || null;
 
-  const leftAreas = areas.filter(a => !a.recoveryOfficerId);
-  const rightAreas = areas.filter(a => a.recoveryOfficerId === selectedOfficerId);
+  // An area belongs to an officer if its recoveryOfficerIds contains them.
+  const isAssignedToOfficer = (area: Area, officerId: string) =>
+    area.recoveryOfficerIds?.includes(officerId) ?? false;
+
+  const officerNamesFor = (area: Area) =>
+    (area.recoveryOfficerIds ?? [])
+      .map(id => officers.find(o => o.id === id)?.name)
+      .filter(Boolean)
+      .join(', ');
+
+  // Areas currently assigned to the selected officer (from the server).
+  const assignedAreas = areas.filter(a =>
+    selectedOfficerId ? isAssignedToOfficer(a, selectedOfficerId) : false,
+  );
+
+  // Left list: the master pool of all areas in the company.
+  // Moving an area to the right does not remove it from here, so any
+  // area can be assigned to multiple recovery officers.
+  const leftAreas = areas;
+
+  // Right list: assigned areas (minus staged unassignments) plus staged additions.
+  const rightAreas = [
+    ...assignedAreas.filter(a => !stagedLeftIds.includes(a.id)),
+    ...areas.filter(
+      a =>
+        stagedRightIds.includes(a.id) &&
+        !isAssignedToOfficer(a, selectedOfficerId),
+    ),
+  ];
+
+  const stagedChangeCount = stagedRightIds.length + stagedLeftIds.length;
+
+  const resetStaging = () => {
+    setStagedRightIds([]);
+    setStagedLeftIds([]);
+    setLeftSelected([]);
+    setRightSelected([]);
+  };
 
   const filteredData = areas.filter(a => {
     if (!search.trim()) {
       return true;
     }
     const q = search.trim().toLowerCase();
-    return [a.city, a.zone, a.locality, a.subLocality || ''].some(v =>
+    return [a.city, a.zone, a.locality].some(v =>
       v.toLowerCase().includes(q),
     );
   });
@@ -309,16 +362,11 @@ export default function RecoveryAreasScreen() {
     {
       key: 'assigned',
       label: 'Officers Assigned',
-      value: String(areas.filter(a => a.recoveryOfficerId).length),
+      value: String(areas.filter(a => (a.recoveryOfficerIds?.length ?? 0) > 0).length),
       icon: Users,
       gradient: ['#6D28D9', '#A78BFA'] as [string, string],
     },
   ];
-
-  const officerName = (area: Area) => {
-    const officer = officers.find(o => o.id === area.recoveryOfficerId);
-    return officer ? officer.name : '';
-  };
 
   const toggleLeft = (id: string) => {
     setLeftSelected(prev =>
@@ -332,38 +380,92 @@ export default function RecoveryAreasScreen() {
     );
   };
 
-  const moveAreas = async (areaIds: string[], targetOfficerId: string | null) => {
-    if (areaIds.length === 0) {
+  // Stage (client-side only) areas to be assigned to the selected officer.
+  const stageToRight = (ids: string[]) => {
+    if (!selectedOfficerId || ids.length === 0) {
+      return;
+    }
+    const nextRight = [...stagedRightIds];
+    for (const id of ids) {
+      const area = areas.find(a => a.id === id);
+      if (!area) {
+        continue;
+      }
+      // Already assigned to this officer - no change needed.
+      if (isAssignedToOfficer(area, selectedOfficerId)) {
+        continue;
+      }
+      if (!nextRight.includes(id)) {
+        nextRight.push(id);
+      }
+    }
+    // Cancelling any staged unassignment prevents one area going to two places.
+    setStagedLeftIds(prev => prev.filter(id => !ids.includes(id)));
+    setStagedRightIds(nextRight);
+    setLeftSelected([]);
+    setRightSelected([]);
+  };
+
+  // Stage (client-side only) areas to be unassigned from the selected officer.
+  const stageToLeft = (ids: string[]) => {
+    if (ids.length === 0) {
+      return;
+    }
+    const nextLeft = [...stagedLeftIds];
+    for (const id of ids) {
+      if (!nextLeft.includes(id)) {
+        nextLeft.push(id);
+      }
+    }
+    setStagedRightIds(prev => prev.filter(id => !ids.includes(id)));
+    setStagedLeftIds(nextLeft);
+    setRightSelected(prev => prev.filter(id => !ids.includes(id)));
+    setLeftSelected([]);
+  };
+
+  const moveSingleToRight = () => {
+    const ids = leftSelected.length > 0 ? leftSelected : leftAreas.slice(0, 1).map(a => a.id);
+    stageToRight(ids);
+  };
+
+  const moveAllToRight = () => {
+    stageToRight(leftAreas.map(a => a.id));
+  };
+
+  const moveSingleToLeft = () => {
+    const ids = rightSelected.length > 0 ? rightSelected : rightAreas.slice(0, 1).map(a => a.id);
+    stageToLeft(ids);
+  };
+
+  const moveAllToLeft = () => {
+    stageToLeft(rightAreas.map(a => a.id));
+  };
+
+  // Persist the staged changes for the selected officer with a single Save.
+  const saveAssignments = async () => {
+    if (!selectedOfficerId || stagedChangeCount === 0) {
       return;
     }
     setTransferSaving(true);
     let count = 0;
     try {
-      for (const areaId of areaIds) {
-        const area = areas.find(a => a.id === areaId);
-        if (!area) {
-          continue;
-        }
-        await updateArea(areaId, {
-          id: areaId,
-          city: area.city,
-          zone: area.zone,
-          locality: area.locality,
-          subLocality: area.subLocality || '',
-          recoveryOfficerId: targetOfficerId || undefined,
-        });
+      for (const id of stagedRightIds) {
+        await assignAreaOfficer(id, selectedOfficerId);
         count++;
       }
-      setLeftSelected([]);
-      setRightSelected([]);
-      fetchData(false);
+      for (const id of stagedLeftIds) {
+        await unassignAreaOfficer(id, selectedOfficerId);
+        count++;
+      }
+      resetStaging();
+      await fetchData(false);
       Alert.alert('Success', `${count} area(s) updated.`);
     } catch (err: any) {
       const msg =
         err.response?.data?.message ||
         err.response?.data?.error ||
         'Failed to update areas';
-      Alert.alert('Error', msg);
+      Alert.alert('Error', `Failed after ${count} area(s): ${msg}`);
     } finally {
       setTransferSaving(false);
     }
@@ -394,7 +496,6 @@ export default function RecoveryAreasScreen() {
         zone: formZone.trim(),
         locality: formLocality.trim(),
         subLocality: formSubLocality.trim(),
-        recoveryOfficerId: editing.recoveryOfficerId,
       });
       setFormOpen(false);
       setEditing(null);
@@ -451,7 +552,9 @@ export default function RecoveryAreasScreen() {
     label: `${o.name} - ${o.email || ''}`,
   }));
 
-  const renderItem = ({item, index}: {item: Area; index: number}) => (
+  const renderItem = ({item, index}: {item: Area; index: number}) => {
+    const assignedNames = officerNamesFor(item);
+    return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <Text style={styles.rowIndex}>{index + 1}</Text>
@@ -476,23 +579,25 @@ export default function RecoveryAreasScreen() {
 
       <View style={styles.cardFooter}>
         <View
+        style={[
+          styles.officerBadge,
+          !assignedNames && styles.officerBadgeUnassigned,
+        ]}>
+        <Users size={12} color={assignedNames ? '#065F46' : '#6B7280'} />
+        <Text
           style={[
-            styles.officerBadge,
-            !item.recoveryOfficerId && styles.officerBadgeUnassigned,
-          ]}>
-          <Users size={12} color={item.recoveryOfficerId ? '#065F46' : '#6B7280'} />
-          <Text
-            style={[
-              styles.officerBadgeText,
-              !item.recoveryOfficerId && styles.officerBadgeTextUnassigned,
-            ]}>
-            {item.recoveryOfficerId ? officerName(item) || 'Assigned' : 'Unassigned'}
-          </Text>
-        </View>
+            styles.officerBadgeText,
+            !assignedNames && styles.officerBadgeTextUnassigned,
+          ]}
+          numberOfLines={1}>
+          {assignedNames || 'Unassigned'}
+        </Text>
+      </View>
         <Text style={styles.footerHint}>{item.city}</Text>
       </View>
     </View>
-  );
+    );
+  };
 
   const renderTransferBox = (
     title: string,
@@ -500,6 +605,8 @@ export default function RecoveryAreasScreen() {
     selected: string[],
     onToggle: (id: string) => void,
     highlight: boolean,
+    emptyText: string,
+    showOfficers = false,
   ) => (
     <View style={styles.transferBox}>
       <View style={[styles.transferBoxHeader, highlight && styles.transferBoxHeaderHighlight]}>
@@ -514,10 +621,11 @@ export default function RecoveryAreasScreen() {
       </View>
       <View style={styles.transferList}>
         {list.length === 0 ? (
-          <Text style={styles.transferEmpty}>No areas</Text>
+          <Text style={styles.transferEmpty}>{emptyText}</Text>
         ) : (
           list.map(area => {
             const isSelected = selected.includes(area.id);
+            const names = showOfficers ? officerNamesFor(area) : '';
             return (
               <TouchableOpacity
                 key={area.id}
@@ -527,6 +635,9 @@ export default function RecoveryAreasScreen() {
                   style={[styles.transferItemText, isSelected && styles.transferItemTextSelected]}
                   numberOfLines={1}>
                   {area.locality}, {area.city}
+                  {names ? (
+                    <Text style={styles.transferItemSubtext}> ({names})</Text>
+                  ) : null}
                 </Text>
               </TouchableOpacity>
             );
@@ -621,66 +732,108 @@ export default function RecoveryAreasScreen() {
             </TouchableOpacity>
 
             {selectedOfficerId && selectedOfficer ? (
-              <View style={styles.transferRow}>
-                {renderTransferBox(
-                  `Available Areas (${leftAreas.length})`,
-                  leftAreas,
-                  leftSelected,
-                  toggleLeft,
-                  false,
-                )}
+              <>
+                <View style={styles.transferRow}>
+                  {renderTransferBox(
+                    `All Areas (${leftAreas.length})`,
+                    leftAreas,
+                    leftSelected,
+                    toggleLeft,
+                    false,
+                    'No areas available',
+                    true,
+                  )}
 
-                <View style={styles.transferButtons}>
-                  <TouchableOpacity
-                    style={[
-                      styles.transferBtn,
-                      (leftSelected.length === 0 || transferSaving) &&
-                        styles.transferBtnDisabled,
-                    ]}
-                    disabled={leftSelected.length === 0 || transferSaving}
-                    onPress={() => moveAreas(leftSelected, selectedOfficerId)}>
-                    <ChevronRight size={18} color="#374151" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.transferBtn,
-                      (leftAreas.length === 0 || transferSaving) &&
-                        styles.transferBtnDisabled,
-                    ]}
-                    disabled={leftAreas.length === 0 || transferSaving}
-                    onPress={() => moveAreas(leftAreas.map(a => a.id), selectedOfficerId)}>
-                    <ChevronsRight size={18} color="#374151" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.transferBtn,
-                      (rightSelected.length === 0 || transferSaving) &&
-                        styles.transferBtnDisabled,
-                    ]}
-                    disabled={rightSelected.length === 0 || transferSaving}
-                    onPress={() => moveAreas(rightSelected, null)}>
-                    <ChevronLeft size={18} color="#374151" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.transferBtn,
-                      (rightAreas.length === 0 || transferSaving) &&
-                        styles.transferBtnDisabled,
-                    ]}
-                    disabled={rightAreas.length === 0 || transferSaving}
-                    onPress={() => moveAreas(rightAreas.map(a => a.id), null)}>
-                    <ChevronsLeft size={18} color="#374151" />
-                  </TouchableOpacity>
+                  <View style={styles.transferButtons}>
+                    <TouchableOpacity
+                      style={[
+                        styles.transferBtn,
+                        (leftAreas.length === 0 || transferSaving) &&
+                          styles.transferBtnDisabled,
+                      ]}
+                      disabled={leftAreas.length === 0 || transferSaving}
+                      onPress={moveSingleToRight}>
+                      <ChevronRight size={18} color="#374151" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.transferBtn,
+                        (leftAreas.length === 0 || transferSaving) &&
+                          styles.transferBtnDisabled,
+                      ]}
+                      disabled={leftAreas.length === 0 || transferSaving}
+                      onPress={moveAllToRight}>
+                      <ChevronsRight size={18} color="#374151" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.transferBtn,
+                        (rightAreas.length === 0 || transferSaving) &&
+                          styles.transferBtnDisabled,
+                      ]}
+                      disabled={rightAreas.length === 0 || transferSaving}
+                      onPress={moveSingleToLeft}>
+                      <ChevronLeft size={18} color="#374151" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.transferBtn,
+                        (rightAreas.length === 0 || transferSaving) &&
+                          styles.transferBtnDisabled,
+                      ]}
+                      disabled={rightAreas.length === 0 || transferSaving}
+                      onPress={moveAllToLeft}>
+                      <ChevronsLeft size={18} color="#374151" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {renderTransferBox(
+                    `Areas Assigned to ${selectedOfficer.name} (${rightAreas.length})`,
+                    rightAreas,
+                    rightSelected,
+                    toggleRight,
+                    true,
+                    'No areas assigned',
+                  )}
                 </View>
 
-                {renderTransferBox(
-                  `Assigned to ${selectedOfficer.name} (${rightAreas.length})`,
-                  rightAreas,
-                  rightSelected,
-                  toggleRight,
-                  true,
-                )}
-              </View>
+                <View style={styles.transferFooter}>
+                  <Text style={styles.transferPending}>
+                    {stagedChangeCount > 0
+                      ? `${stagedChangeCount} pending change(s) - tap Save to apply them to ${
+                          selectedOfficer.name || 'this officer'
+                        }.`
+                      : ''}
+                  </Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.transferFooterBtn,
+                      (stagedChangeCount === 0 || transferSaving) &&
+                        styles.transferBtnDisabled,
+                    ]}
+                    disabled={stagedChangeCount === 0 || transferSaving}
+                    onPress={resetStaging}>
+                    <RotateCcw size={14} color="#374151" />
+                    <Text style={styles.transferFooterBtnText}>Reset</Text>
+                  </TouchableOpacity>
+                  <GradientButton
+                    colors={['#10B981', '#16A34A']}
+                    style={styles.transferSaveBtn}
+                    onPress={saveAssignments}
+                    disabled={stagedChangeCount === 0 || transferSaving}>
+                    {transferSaving ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <>
+                        <Save size={14} color="#FFFFFF" />
+                        <Text style={styles.transferSaveBtnText}>
+                          {transferSaving ? 'Saving...' : 'Save Assignments'}
+                        </Text>
+                      </>
+                    )}
+                  </GradientButton>
+                </View>
+              </>
             ) : (
               <Text style={styles.transferHint}>
                 Select a recovery officer above to manage their area assignments.
@@ -745,7 +898,10 @@ export default function RecoveryAreasScreen() {
         options={officerOptions}
         value={selectedOfficerId}
         emptyLabel="Choose a recovery officer"
-        onSelect={setSelectedOfficerId}
+        onSelect={id => {
+          setSelectedOfficerId(id);
+          resetStaging();
+        }}
         onClose={() => setOfficerPickerOpen(false)}
       />
 
@@ -987,8 +1143,45 @@ const styles = StyleSheet.create({
   },
   transferItemSelected: {backgroundColor: '#D1FAE5'},
   transferItemText: {fontSize: 13, color: '#374151'},
+  transferItemSubtext: {fontSize: 11, color: '#6B7280'},
   transferItemTextSelected: {color: '#065F46', fontWeight: '600'},
   transferButtons: {justifyContent: 'center', gap: 8},
+  transferFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    marginTop: 12,
+    paddingTop: 12,
+  },
+  transferPending: {flex: 1, fontSize: 11, color: '#6B7280'},
+  transferFooterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF',
+  },
+  transferFooterBtnText: {fontSize: 13, fontWeight: '600', color: '#374151'},
+  transferSaveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    shadowOffset: {width: 0, height: 3},
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  transferSaveBtnText: {color: '#FFFFFF', fontSize: 13, fontWeight: '600'},
   transferBtn: {
     width: 34,
     height: 34,

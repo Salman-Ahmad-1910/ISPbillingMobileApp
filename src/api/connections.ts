@@ -19,3 +19,18 @@ export async function updateConnection(id: string, data: Partial<Connection>): P
 export async function deleteConnection(id: string): Promise<void> {
   await apiClient.delete<ApiResponse>(`/admin/connections/${id}`);
 }
+
+// Mirrors the web "Add Sublocality" bulk action: assigns one area to every
+// selected subscription so the subscribers show up for that area's recovery
+// officers.
+export async function bulkAssignSublocality(
+  ids: string[],
+  sublocalityId: string,
+  comments?: string,
+): Promise<number> {
+  const response = await apiClient.post<ApiResponse<{updated?: number}>>(
+    '/admin/connections/bulk-sublocality',
+    {ids, sublocalityId, comments: comments || ''},
+  );
+  return response.data.data?.updated ?? ids.length;
+}

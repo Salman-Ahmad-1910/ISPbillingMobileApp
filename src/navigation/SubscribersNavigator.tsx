@@ -6,11 +6,12 @@ import SubscriberFormScreen from '../screens/subscribers/SubscriberFormScreen';
 import InquiriesScreen from '../screens/subscribers/InquiriesScreen';
 import CorporateScreen from '../screens/subscribers/CorporateScreen';
 import SalesScreen from '../screens/subscribers/SalesScreen';
+import {Connection} from '../types';
 
 export type SubscribersStackParamList = {
   SubscriberList: undefined;
-  SubscriberDetail: {id: string};
-  SubscriberForm: {subscriber?: any};
+  SubscriberDetail: {connection: Connection};
+  SubscriberForm: {connection?: Connection};
   Inquiries: undefined;
   Corporate: undefined;
   Sales: undefined;

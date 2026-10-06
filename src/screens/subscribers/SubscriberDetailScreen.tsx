@@ -86,10 +86,6 @@ export default function SubscriberDetailScreen({route, navigation}: any) {
             <Text style={styles.fieldValue}>{subscriber.mobile || '-'}</Text>
           </View>
           <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>CNIC</Text>
-            <Text style={styles.fieldValue}>{subscriber.cnic || '-'}</Text>
-          </View>
-          <View style={styles.fieldRow}>
             <Text style={styles.fieldLabel}>Address</Text>
             <Text style={styles.fieldValue}>{subscriber.address || '-'}</Text>
           </View>
@@ -106,36 +102,12 @@ export default function SubscriberDetailScreen({route, navigation}: any) {
             <Text style={styles.fieldValue}>{subscriber.installationDate || '-'}</Text>
           </View>
           <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Recharge Date</Text>
-            <Text style={styles.fieldValue}>{subscriber.rechargeDate || '-'}</Text>
-          </View>
-          <View style={styles.fieldRow}>
             <Text style={styles.fieldLabel}>Cable Package</Text>
             <Text style={styles.fieldValue}>{subscriber.packageCable || '-'}</Text>
           </View>
           <View style={styles.fieldRow}>
             <Text style={styles.fieldLabel}>Internet Package</Text>
             <Text style={styles.fieldValue}>{subscriber.packageInternet || '-'}</Text>
-          </View>
-          <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Connection Provider</Text>
-            <Text style={styles.fieldValue}>{subscriber.connectionProvider || '-'}</Text>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Network</Text>
-          <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Box Number</Text>
-            <Text style={styles.fieldValue}>{subscriber.boxNumber || '-'}</Text>
-          </View>
-          <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Splitter Port</Text>
-            <Text style={styles.fieldValue}>{subscriber.splitterPort || '-'}</Text>
-          </View>
-          <View style={styles.fieldRow}>
-            <Text style={styles.fieldLabel}>Amount</Text>
-            <Text style={styles.fieldValue}>{subscriber.amount ? subscriber.amount.toFixed(2) : '-'}</Text>
           </View>
         </View>
       </ScrollView>

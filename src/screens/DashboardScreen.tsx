@@ -14,9 +14,25 @@ import {useFocusEffect, useNavigation} from '@react-navigation/native';
 import {DrawerActions} from '@react-navigation/native';
 import {useDrawerStatus} from '@react-navigation/drawer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {Users, Wallet, AlertCircle, LayoutDashboard} from 'lucide-react-native';
+import {
+  Users,
+  Wallet,
+  AlertCircle,
+  LayoutDashboard,
+  Clock,
+  CheckCircle2,
+  TrendingUp,
+  ChevronDown,
+  ChevronUp,
+  Car,
+  Download,
+  Banknote,
+  Landmark,
+  XCircle,
+  AlertTriangle,
+} from 'lucide-react-native';
 import {useAuth} from '../context/AuthContext';
-import {getDashboardData} from '../api/dashboard';
+import {getDashboardData, TimeRange, PackageType} from '../api/dashboard';
 import {getApiBaseUrl} from '../api/client';
 import {DashboardData} from '../types';
 import GaugeMeter from '../components/GaugeMeter';
@@ -46,10 +62,10 @@ function DoorMenuIcon({open}: {open: boolean}) {
   );
 }
 
-type KpiCard = {
+type CardDefinition = {
   title: string;
   value: string;
-  change: string;
+  label: string;
   icon: React.ComponentType<{size?: number; color?: string}>;
   gradient: [string, string];
   bgLight: string;
@@ -65,6 +81,9 @@ export default function DashboardScreen() {
   const [error, setError] = useState<string | null>(null);
   const [targetAmount, setTargetAmount] = useState(0);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [showSummary, setShowSummary] = useState(false);
+  const [timeRange, setTimeRange] = useState<TimeRange>('monthly');
+  const [packageType, setPackageType] = useState<PackageType>('both');
 
   const companyName =
     user?.company?.name || companies.find(c => c.id === companyId)?.name || '';
@@ -79,14 +98,12 @@ export default function DashboardScreen() {
         }
       })
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId]);
 
   useEffect(() => {
     if (!companies.length) {
       refreshCompanies();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyId]);
 
   useEffect(() => {
@@ -111,7 +128,7 @@ export default function DashboardScreen() {
         setLoading(true);
       }
       setError(null);
-      const result = await getDashboardData();
+      const result = await getDashboardData(timeRange, packageType);
       setData(result);
     } catch (err: any) {
       const message =
@@ -126,7 +143,7 @@ export default function DashboardScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchData();
-    }, []),
+    }, [timeRange, packageType]),
   );
 
   const onRefresh = () => {
@@ -163,38 +180,115 @@ export default function DashboardScreen() {
     );
   }
 
-  const kpiCards: KpiCard[] = [
+  const totalCollection = data?.totalCollection ?? 0;
+
+  const subscriberOverviewCards: CardDefinition[] = [
+    {
+      title: 'Total Subscribers',
+      value: String(data?.subscribersStats?.total ?? 0),
+      label: 'all subscribers',
+      icon: Users,
+      gradient: ['#0EA5E9', '#3B82F6'],
+      bgLight: '#F0F9FF',
+    },
     {
       title: 'Active Subscribers',
       value: String(data?.subscribersStats?.active ?? 0),
-      change: `in ${companyName || 'company'}`,
+      label: `in ${companyName || 'company'}`,
       icon: Users,
-      gradient: ['#2563EB', '#06B6D4'],
+      gradient: ['#3B82F6', '#06B6D4'],
       bgLight: '#EFF6FF',
     },
     {
-      title: 'Total Collection (Month)',
-      value: `PKR ${(data?.totalCollectionMonth ?? 0).toLocaleString()}`,
-      change: 'this month total',
-      icon: Wallet,
-      gradient: ['#059669', '#10B981'],
+      title: 'Inactive Subscribers',
+      value: String(data?.subscribersStats?.inactive ?? 0),
+      label: 'suspended / inactive',
+      icon: XCircle,
+      gradient: ['#F97316', '#F59E0B'],
+      bgLight: '#FFF7ED',
+    },
+    {
+      title: 'Pending Subscribers',
+      value: String(data?.subscribersStats?.pending ?? 0),
+      label: 'still owe amount',
+      icon: Clock,
+      gradient: ['#F59E0B', '#F97316'],
+      bgLight: '#FFFBEB',
+    },
+  ];
+
+  const financialCards: CardDefinition[] = [
+    {
+      title: 'Receivable',
+      value: `PKR ${(data?.receivableAmount ?? 0).toLocaleString()}`,
+      label: 'pending + received this month',
+      icon: Banknote,
+      gradient: ['#10B981', '#22C55E'],
       bgLight: '#ECFDF5',
     },
     {
-      title: 'Overdue Subscribers',
-      value: String(data?.overdueCount ?? 0),
-      change: 'unpaid accounts',
-      icon: AlertCircle,
-      gradient: ['#E11D48', '#F43F5E'],
-      bgLight: '#FFF1F2',
+      title: 'Balance',
+      value: `PKR ${(data?.pendingAmount ?? 0).toLocaleString()}`,
+      label: 'pending amount this month',
+      icon: Clock,
+      gradient: ['#F59E0B', '#F97316'],
+      bgLight: '#FFFBEB',
     },
     {
-      title: 'Total Overdue',
-      value: `PKR ${(data?.overdueAmount ?? 0).toLocaleString()}`,
-      change: 'past due amount',
-      icon: AlertCircle,
-      gradient: ['#DC2626', '#E11D48'],
+      title: 'Received (All Time)',
+      value: `PKR ${(data?.receivedAllTime ?? 0).toLocaleString()}`,
+      label: 'total payments received',
+      icon: Wallet,
+      gradient: ['#3B82F6', '#6366F1'],
+      bgLight: '#EFF6FF',
+    },
+    {
+      title: 'Total Balance',
+      value: `PKR ${(data?.pendingAmount ?? 0).toLocaleString()}`,
+      label: 'remaining amount all time',
+      icon: Clock,
+      gradient: ['#06B6D4', '#0EA5E9'],
+      bgLight: '#F0F9FF',
+    },
+    {
+      title: 'Received This Month',
+      value: `PKR ${(data?.receivedThisMonth ?? 0).toLocaleString()}`,
+      label: `collected in ${data?.selectedMonth || ''} ${data?.selectedYear || ''}`,
+      icon: TrendingUp,
+      gradient: ['#14B8A6', '#10B981'],
+      bgLight: '#F0FDFA',
+    },
+    {
+      title: 'Bad Debt',
+      value: `PKR ${(data?.badDebtAmount ?? 0).toLocaleString()}`,
+      label: 'unpaid by lost / defaulted subscribers',
+      icon: AlertTriangle,
+      gradient: ['#EF4444', '#F43F5E'],
       bgLight: '#FEF2F2',
+    },
+    {
+      title: 'Paid Amount',
+      value: `PKR ${(data?.paidAmount ?? 0).toLocaleString()}`,
+      label: 'received from fully paid subscribers',
+      icon: Banknote,
+      gradient: ['#22C55E', '#10B981'],
+      bgLight: '#F0FDF4',
+    },
+    {
+      title: 'Paid Subscribers',
+      value: String(data?.subscribersStats?.paid ?? 0),
+      label: 'subscribers who cleared their dues',
+      icon: CheckCircle2,
+      gradient: ['#84CC16', '#22C55E'],
+      bgLight: '#F7FEE7',
+    },
+    {
+      title: 'Advance Amount',
+      value: `PKR ${(data?.advanceAmount ?? 0).toLocaleString()}`,
+      label: 'overpaid / advance credit',
+      icon: Landmark,
+      gradient: ['#EAB308', '#F59E0B'],
+      bgLight: '#FEFCE8',
     },
   ];
 
@@ -215,7 +309,7 @@ export default function DashboardScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2563EB']} />
         }
         showsVerticalScrollIndicator={false}>
-        {/* Company Banner (scrolls with content) */}
+        {/* Company Banner */}
         <View style={styles.companyBanner}>
           {logoUrl ? (
             <Image
@@ -231,7 +325,7 @@ export default function DashboardScreen() {
           )}
           <View style={styles.companyInfo}>
             <Text style={styles.companyName} numberOfLines={1}>
-              {companyName || 'Dashboard'}
+              {companyName || 'Dashboard'} Dashboard
             </Text>
             <Text style={styles.companySubtitle}>
               Here&apos;s a real-time overview of your network and business operations.
@@ -239,34 +333,142 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* KPI Cards */}
-        <View style={styles.kpiGrid}>
-          {kpiCards.map((kpi, index) => (
-            <View key={index} style={[styles.kpiCard, {backgroundColor: kpi.bgLight}]}>
-              <View style={styles.kpiHeader}>
-                <View style={[styles.kpiIconBg, {backgroundColor: kpi.gradient[0]}]}>
-                  <kpi.icon size={18} color="#FFFFFF" />
-                </View>
-                <View style={styles.kpiOverlay} />
-              </View>
-              <View style={styles.kpiBody}>
-                <Text style={styles.kpiTitle}>{kpi.title}</Text>
-                <Text style={[styles.kpiValue, {color: kpi.gradient[0]}]}>{kpi.value}</Text>
-                <Text style={styles.kpiChange}>{kpi.change}</Text>
-              </View>
-            </View>
-          ))}
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => navigation.navigate('Drivers' as never)}>
+            <Car size={16} color="#FFFFFF" />
+            <Text style={styles.actionButtonText}>Drivers</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => navigation.navigate('Applications' as never)}>
+            <Download size={16} color="#FFFFFF" />
+            <Text style={styles.actionButtonText}>Download Application</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Gauge Meter */}
         <View style={styles.gaugeCard}>
           <GaugeMeter
-            currentAmount={data?.totalCollectionMonth ?? 0}
+            currentAmount={totalCollection}
             targetAmount={targetAmount}
             onTargetSave={handleTargetSave}
             size={200}
           />
         </View>
+
+        {/* Summary Toggle */}
+        <TouchableOpacity
+          style={styles.summaryToggle}
+          onPress={() => setShowSummary(!showSummary)}>
+          {showSummary ? (
+            <ChevronUp size={16} color="#6B7280" />
+          ) : (
+            <ChevronDown size={16} color="#6B7280" />
+          )}
+          <Text style={styles.summaryToggleText}>
+            {showSummary ? 'Hide Summary' : 'Show Summary'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Summary Section */}
+        {showSummary && (
+          <View style={styles.summarySection}>
+            {/* Filters */}
+            <View style={styles.filtersRow}>
+              <View style={styles.filterGroup}>
+                <Text style={styles.filterLabel}>Package Type</Text>
+                <View style={styles.filterChips}>
+                  {(['both', 'internet', 'tv_cable'] as PackageType[]).map(type => (
+                    <TouchableOpacity
+                      key={type}
+                      style={[
+                        styles.filterChip,
+                        packageType === type && styles.filterChipActive,
+                      ]}
+                      onPress={() => setPackageType(type)}>
+                      <Text
+                        style={[
+                          styles.filterChipText,
+                          packageType === type && styles.filterChipTextActive,
+                        ]}>
+                        {type === 'both' ? 'Both' : type === 'internet' ? 'Internet' : 'Cable'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+              <View style={styles.filterGroup}>
+                <Text style={styles.filterLabel}>Time Range</Text>
+                <View style={styles.filterChips}>
+                  {(['daily', 'monthly', 'yearly', 'all'] as TimeRange[]).map(range => (
+                    <TouchableOpacity
+                      key={range}
+                      style={[
+                        styles.filterChip,
+                        timeRange === range && styles.filterChipActive,
+                      ]}
+                      onPress={() => setTimeRange(range)}>
+                      <Text
+                        style={[
+                          styles.filterChipText,
+                          timeRange === range && styles.filterChipTextActive,
+                        ]}>
+                        {range === 'daily' ? 'Daily' : range === 'monthly' ? 'Monthly' : range === 'yearly' ? 'Yearly' : 'All'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+
+            {/* Subscriber Overview */}
+            <View style={styles.summaryGroup}>
+              <Text style={styles.summaryGroupLabel}>Subscriber Overview</Text>
+              <View style={styles.kpiGrid}>
+                {subscriberOverviewCards.map((card, index) => (
+                  <View key={index} style={[styles.kpiCard, {backgroundColor: card.bgLight}]}>
+                    <View style={styles.kpiHeader}>
+                      <View style={styles.kpiOverlay} />
+                      <View style={[styles.kpiIconBg, {backgroundColor: card.gradient[0]}]}>
+                        <card.icon size={18} color="#FFFFFF" />
+                      </View>
+                    </View>
+                    <View style={styles.kpiBody}>
+                      <Text style={styles.kpiTitle}>{card.title}</Text>
+                      <Text style={[styles.kpiValue, {color: '#111827'}]}>{card.value}</Text>
+                      <Text style={styles.kpiChange}>{card.label}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            {/* Financial Metrics */}
+            <View style={styles.summaryGroup}>
+              <Text style={styles.summaryGroupLabel}>Financial Metrics</Text>
+              <View style={styles.kpiGrid}>
+                {financialCards.map((card, index) => (
+                  <View key={index} style={[styles.kpiCard, {backgroundColor: card.bgLight}]}>
+                    <View style={styles.kpiHeader}>
+                      <View style={styles.kpiOverlay} />
+                      <View style={[styles.kpiIconBg, {backgroundColor: card.gradient[0]}]}>
+                        <card.icon size={18} color="#FFFFFF" />
+                      </View>
+                    </View>
+                    <View style={styles.kpiBody}>
+                      <Text style={styles.kpiTitle}>{card.title}</Text>
+                      <Text style={[styles.kpiValue, {color: '#111827'}]}>{card.value}</Text>
+                      <Text style={styles.kpiChange}>{card.label}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Charts */}
         <View style={styles.chartSection}>
@@ -557,17 +759,117 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
 
+  // Action Buttons
+  actionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#059669',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    shadowColor: '#059669',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  actionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  // Summary Toggle
+  summaryToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderStyle: 'dashed',
+    borderRadius: 10,
+  },
+  summaryToggleText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+
+  // Summary Section
+  summarySection: {
+    marginTop: 12,
+    gap: 12,
+  },
+  summaryGroup: {
+    gap: 8,
+  },
+  summaryGroupLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  filtersRow: {
+    gap: 12,
+  },
+  filterGroup: {
+    gap: 6,
+  },
+  filterLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  filterChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  filterChipActive: {
+    backgroundColor: '#111827',
+    borderColor: '#111827',
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+  filterChipTextActive: {
+    color: '#FFFFFF',
+  },
+
   // KPI Cards
   kpiGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
   },
   kpiCard: {
     flexGrow: 1,
-    flexBasis: '46%',
+    flexShrink: 0,
+    flexBasis: '47%',
+    minWidth: 100,
     borderRadius: 12,
-    padding: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: '#E5E7EB',
     shadowColor: '#000',
@@ -582,9 +884,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   kpiIconBg: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -593,18 +895,18 @@ const styles = StyleSheet.create({
   },
   kpiBody: {},
   kpiTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '500',
     color: '#6B7280',
     marginBottom: 4,
   },
   kpiValue: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],
   },
   kpiChange: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#9CA3AF',
     marginTop: 2,
   },

@@ -37,6 +37,8 @@ export interface Company {
   subscriptionExpiry?: string;
   role?: string;
   user_company_id?: string;
+  posDiscountPercent?: number;
+  posDiscountUnlimited?: boolean;
 }
 
 export interface LoginPayload {
@@ -63,13 +65,28 @@ export interface ChartPoint {
 
 export interface DashboardData {
   subscribersStats: {
+    total: number;
     active: number;
     suspended: number;
+    inactive: number;
+    pending?: number;
+    advance?: number;
+    paid?: number;
   };
+  totalCollection: number;
   totalCollectionToday: number;
   totalCollectionMonth: number;
   overdueCount: number;
   overdueAmount: number;
+  pendingAmount?: number;
+  paidAmount?: number;
+  receivableAmount?: number;
+  receivedAllTime?: number;
+  receivedThisMonth?: number;
+  advanceAmount?: number;
+  badDebtAmount?: number;
+  selectedMonth?: string;
+  selectedYear?: string;
   payments: Payment[];
   complaintsCount: number;
   complaints: Complaint[];
@@ -86,6 +103,8 @@ export interface Payment {
   amount: number;
   paymentDate: string;
   method: string;
+  transactionId?: string;
+  transactionType?: string;
   collectorId?: string;
   address?: string;
   areaName?: string;
@@ -182,6 +201,7 @@ export interface Area {
   locality: string;
   subLocality?: string;
   recoveryOfficerId?: string;
+  recoveryOfficerIds?: string[];
   companyId?: string;
 }
 
@@ -249,6 +269,7 @@ export interface Connection {
   splitterPort?: number;
   lastPaymentDate?: string;
   remainingAmount?: number;
+  transactionId?: string;
   cnic?: string;
   leavingDate?: string;
   deactivationReason?: string;
@@ -353,6 +374,7 @@ export interface Guarantor {
 
 export interface Product {
   id: string;
+  productId?: string;
   name: string;
   category: string;
   price: number;
@@ -370,6 +392,9 @@ export interface Product {
   salePrice?: number;
   discount?: number;
   serialNumber?: string;
+  productSerialNumber?: string;
+  currentSerialIndex?: number;
+  noSerialNumber?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -427,6 +452,7 @@ export interface PurchaseItem {
   productId: string;
   productName: string;
   quantity: number;
+  quantityEntered?: number;
   purchasePrice: number;
   sellingPrice: number;
   unitType?: string;
@@ -437,6 +463,7 @@ export interface PurchaseItem {
   disc?: number;
   expiryDate?: string;
   serialNumber?: string;
+  mergeExisting?: boolean;
 }
 
 export interface Purchase {
@@ -503,6 +530,8 @@ export interface VendorInvoiceItem {
   productName: string;
   quantity: number;
   unitPrice: number;
+  purchasePrice?: number;
+  sellingPrice?: number;
   unitType?: string;
   subtotal: number;
   serialNumber?: string;
@@ -514,6 +543,7 @@ export interface VendorInvoice {
   vendorName: string;
   invoiceNumber: string;
   invoiceDate: string;
+  discount?: number;
   totalAmount: number;
   batch?: string;
   items: VendorInvoiceItem[];
@@ -561,7 +591,9 @@ export interface Sale {
   subscriberName: string;
   totalAmount: number;
   taxAmount: number;
+  discount?: number;
   paymentMethod: string;
+  status?: string;
   date: string;
   companyId: string;
   isInstallment?: boolean;
