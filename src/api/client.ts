@@ -12,7 +12,7 @@ const PROBE_TIMEOUT = 2500;
 
 // Set this to a fixed API URL to skip auto-detection entirely, e.g.
 //   const MANUAL_BASE_URL = 'http://192.168.1.50:8090/api/v1';
-const MANUAL_BASE_URL = '';
+const MANUAL_BASE_URL = 'https://103.99.132.68:8090/api/v1';
 
 type RetryableConfig = InternalAxiosRequestConfig & {_hostRetried?: boolean};
 
